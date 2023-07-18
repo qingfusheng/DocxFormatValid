@@ -58,6 +58,7 @@ class Util:
         begin = False
         lst = []
         for p in self.doc.getElementsByTagName('w:p'):  # 获取所有的段落标签
+
             text = self.getFullText(p)  # 获取段落标签的文本
             if text.replace(' ', '') == '目录':
                 # 当检测到目录文本时，开始获取content
@@ -224,6 +225,20 @@ class Util:
                 result = False
             return result
 
+    def isTabTitle(self, p) -> bool:
+        text = self.getFullText(p)
+        if len(text) < 30 and text.find(',') == -1 and text.find('，') == -1 and re.search('^[表][0-9]',
+                                                                                          re.sub('\s', '', text)):
+            return True
+        return False
+
+    def isPicTitle(self, p) -> bool:
+        text = self.getFullText(p)
+        if len(text) < 30 and text.find(',') == -1 and text.find('，') == -1 and re.search('^[图][0-9]',
+                                                                                          re.sub('\s', '', text)):
+            return True
+        return False
+
     def getTitle(self):
         content_set = set()
         title_list = []
@@ -231,6 +246,22 @@ class Util:
         old_order = ""
         for p in self.doc.getElementsByTagName('w:p'):
             match, type = self.isTitle(p)
+            pic_match = self.isPicTitle(p)
+            tab_match = self.isTabTitle(p)
+
+            # 增加图表的标题识别
+            if title_began:
+                reg = re.compile(r'^\d+(\.\d+)*')
+                reg_match = reg.search(self.getFullText(p))
+                if reg_match:
+                    _order = reg_match.group()
+                else:
+                    _order = ""
+                if pic_match:
+                    title_list.append((4, self.getFullText(p), _order))
+                if tab_match:
+                    title_list.append((5, self.getFullText(p), _order))
+
             if match:
                 p_content = re.sub(re.compile(r'（\d+）'), "", self.getFullText(p))
                 # print(p_content)
@@ -257,37 +288,55 @@ class Util:
         #     print(each)
         return title_list
 
+    def getPicTabTitle(self):
+        tab_pic_titles = []
+        for p in self.doc.getElementsByTagName('w:p'):
+            tab_match = self.isTabTitle(p)
+            pic_match = self.isPicTitle(p)
+            if tab_match or pic_match:
+                order = re.search(r'\d+(\.\d+)*', self.getFullText(p)).group()
+                _type = 4 if tab_match else 5
+                tab_pic_titles.append((_type, self.getFullText(p), order))
+        return tab_pic_titles
+
     def getFullContext(self):
         content_over = False
         text_begin = False
-        titleList = self.getTitle()
-        pure_title = [each[1] for each in titleList]
-        contentList = self.getContent()
-        index = 0
+        title_list = self.getTitle()
+        pure_title = [each[1] for each in title_list]
+        content_list = self.getContent()
+
+        title_index = 0
         result = []
         for p in self.doc.getElementsByTagName('w:p'):
+            # 过滤到表格中的文本内容
+            try:
+                if p.parentNode.parentNode.parentNode.tagName == "w:tbl":
+                    # print("识别到表格，已跳过")
+                    continue
+            except AttributeError as error:
+                print("", end="")
             if not text_begin and not content_over:
-                if self.getFullText(p) == contentList[-1]:
+                if self.getFullText(p) == content_list[-1]:
                     content_over = True
-                # else:
-                #     continue
+
             if content_over:
                 if self.getFullText(p) == pure_title[0]:
                     text_begin = True
                     content_over = False
-                # else:
-                #     continue
+
             if text_begin:
-                # print(index)
                 # 检测为title
-                if index < len(titleList):
-                    if self.getFullText(p) == titleList[index][1]:
+                if title_index < len(title_list):
+                    if self.getFullText(p) == title_list[title_index][1]:
                         result.append({
-                            "type": "title",
-                            "level": titleList[index][0],
+                            "type": "title" if title_list[title_index][0] <= 3 else "pic_title" if
+                            title_list[title_index][0] == 4 else "tab_title",
+                            "level": title_list[title_index][0],
                             "content": self.getFullText(p)
                         })
-                        index += 1
+                        title_index += 1
+                        continue
                     else:
                         result.append({
                             "type": "text",
@@ -303,9 +352,6 @@ class Util:
         for each in result:
             print(each)
         return
-
-
-
 
     def test_method(self):
         # document = self.doc.childNodes[0]
