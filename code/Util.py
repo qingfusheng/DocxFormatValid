@@ -351,9 +351,8 @@ class Util:
             reg_match = reg.search(text)
             # print(reg_match)
             _order = reg_match.group()
-            if '.' in _order:
-                sig = '.'
-            elif '-' in _order:
+            sig = '.'
+            if '-' in _order:
                 sig = '-'
             type = len(_order.split(sig))
             return True, type
@@ -546,9 +545,9 @@ class Util:
                 #         "level": -1,
                 #         "content": self.getFullText(p)
                 #     })
-        for each in result:
-            print(each)
-        return
+        # for each in result:
+        #     print(each)
+        return result
 
     def test_method(self):
         # document = self.doc.childNodes[0]
