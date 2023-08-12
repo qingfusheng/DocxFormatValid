@@ -4,12 +4,14 @@ import re
 from lxml import etree
 import sys
 from xml.dom import minidom
+from xml.dom.minidom import parseString
 
 project_dir = os.path.abspath("../../DocxFormatValid/")
 
 
 class Util:
     def __init__(self, file_name):
+        self.comment_dict = None
         self.style_dict = None
         self.docx_dir = os.path.join(project_dir, "code", "./DocxFilter")
         self.workflow_dir = os.path.join(project_dir, "code", "./WorkFlowFilter")
@@ -19,17 +21,20 @@ class Util:
             os.mkdir(self.workflow_dir)
 
         self.docx_filename = file_name
-        self.new_docx_file = "new" + self.docx_filename
+        self.new_docx_file = "new_" + self.docx_filename
         self.unzip()
         self.doc = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'document.xml'))
         self.styles = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'styles.xml'))
         self.themes = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'theme', 'theme1.xml'))
-        self.numbering = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml'))
+        self.numbering = minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) if os.path.exists(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) else minidom.Document()
+        self.comments = minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) if os.path.exists(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) else minidom.Document()
         self.create_style_xml_index_by_styleId()
-
-        # self.content_text_list = []
-        # self.getContent()
-
+        self.create_comment_xml_index_by_commentId()
+        print("comment_dict:", self.comment_dict)
         return
 
     def unzip(self):
@@ -38,7 +43,23 @@ class Util:
         f.close()
         return
 
-    def getFullText(self, p) -> str:
+    @staticmethod
+    def create_empty_dom(self):
+        dom = minidom.Document()
+        return dom
+
+    def create_comment_xml_index_by_commentId(self):
+        self.comment_dict = {}
+        comment_elements = self.comments.getElementsByTagName("w:comment")
+        print("The Count of comments: ", len(comment_elements))
+        for each_comment in comment_elements:
+            comment_id = each_comment.getAttribute("w:id")
+            comment_content = self.getFullText(each_comment)
+            self.comment_dict[comment_id] = comment_content
+        return
+
+    @staticmethod
+    def getFullText(p) -> str:
         # 获取一个节点的所有文字
         text = ''
         for t in p.getElementsByTagName('w:t'):
@@ -61,10 +82,6 @@ class Util:
         for each_style in self.styles.getElementsByTagName("w:style"):
             style_id = each_style.getAttribute("w:styleId")
             self.style_dict[style_id] = each_style
-
-    # def get_character_style(self, style_id):
-    #     style_elem = self.style_dict[style_id]
-    #
 
     def getPointsOfStyle(self, styleId):
         points = 0
@@ -119,60 +136,6 @@ class Util:
         # print(ilvl, rFont, is_b, size, sizeCs)
         return points, ilvl
 
-    # def getContent(self):
-    #     begin = False
-    #     lst = []
-    #     for p in self.doc.getElementsByTagName('w:p'):  # 获取所有的段落标签
-    #
-    #         text = self.getFullText(p)  # 获取段落标签的文本
-    #         if text.replace(' ', '') == '目录':
-    #             # 当检测到目录文本时，开始获取content
-    #             begin = True
-    #             continue
-    #         if begin:
-    #             for t in lst:
-    #                 if self.getFullText(p).replace(' ', '') in t.replace(' ', ''):
-    #                     # 若当前获取到的文本在之前存在lst的列中，则将begin设为false，搭配后面的判断语句直接退出
-    #                     begin = False
-    #         if begin:
-    #             lst.append(self.getFullText(p))
-    #         if begin is False and len(lst) > 0:
-    #             # 检测到正文标题和目录重合后退出，所以lst中只存的是目录
-    #             break
-    #     # self.content_text_list = lst
-    #     return lst
-
-    # @staticmethod
-    # def levenshteinDistance(self, source, target):
-    #     # Levenshtein 距离，又称编辑距离，指的是两个字符串之间，由一个转换成另一个所需的最少编辑操作次数
-    #     def sub_cost(word1, word2, i, j):
-    #         word1 = ' ' + word1
-    #         word2 = ' ' + word2
-    #         if word1[i] == word2[j]:
-    #             return 0
-    #         else:
-    #             return 2
-    #
-    #     n = len(source)
-    #     m = len(target)
-    #     insert_cost = 1
-    #     del_cost = 1
-    #     lst = []
-    #     tmp = 0
-    #     tmp2 = 0
-    #     for i in range(n + 1):
-    #         if i == 0:
-    #             for j in range(m + 1):
-    #                 lst.append(j)
-    #         else:
-    #             for j in range(m + 1):
-    #                 tmp2 = lst[j]
-    #                 lst[j] = min(lst[j] + insert_cost, lst[j - 1] + del_cost if j - 1 >= 0 else i + insert_cost,
-    #                              tmp + sub_cost(source, target, i, j) if j - 1 >= 0 else i - 1 + sub_cost(source,
-    #                                                                                                       target, i, j))
-    #                 tmp = tmp2
-    #     return lst[m]
-
     def isTitle(self, p):
         # 判断是否为标题title
         # 问题是，type的含义是什么，type的取值是[0,1,2,3]，前面提到附录等一级标题的type为1，
@@ -215,8 +178,10 @@ class Util:
                 pPr = p.getElementsByTagName("w:pPr")[0]
                 rFont = pPr.getElementsByTagName("w:rFont")[0] if pPr.getElementsByTagName("w:rFont") else None
                 bold = bool(pPr.getElementsByTagName("w:b") or pPr.getElementsByTagName("w:bCs"))
-                sz = pPr.getElementsByTagName("w:sz")[0].getAttribute("w:val") if pPr.getElementsByTagName("w:sz") else "24"
-                szCs = pPr.getElementsByTagName("w:szCs")[0].getAttribute("w:val") if pPr.getElementsByTagName("w:szCs") else "24"
+                sz = pPr.getElementsByTagName("w:sz")[0].getAttribute("w:val") if pPr.getElementsByTagName(
+                    "w:sz") else "24"
+                szCs = pPr.getElementsByTagName("w:szCs")[0].getAttribute("w:val") if pPr.getElementsByTagName(
+                    "w:szCs") else "24"
                 if rFont == "黑体":
                     points += 1
                 if bold:
@@ -248,62 +213,11 @@ class Util:
                         match = True
                         type = int(ilvl) + 1
 
-            # 若段落中有自动生成的标号，仿照大连理工的程序进行一系列判断，并利用与目录的最小编辑距离与辅助判断。
-            # if p.getElementsByTagName('w:numPr'):
-            #     # print("***********************************************")
-            #     numpr = p.getElementsByTagName('w:numPr')[0]
-            #     ilvl = numpr.getElementsByTagName('w:ilvl')[0]
-            #     numId = numpr.getElementsByTagName('w:numId')[0]
-            #     for num in self.numbering.getElementsByTagName('w:num'):
-            #         if num.getAttribute('w:numId') == numId.getAttribute('w:val'):
-            #             abstract_numid = num.getElementsByTagName('w:abstractNumId')[0]
-            #             for abstract_num in self.numbering.getElementsByTagName('w:abstractNum'):
-            #                 if abstract_num.getAttribute('w:abstractNumId') == abstract_numid.getAttribute('w:val'):
-            #                     for level in abstract_num.getElementsByTagName('w:lvl'):
-            #                         if level.getAttribute('w:ilvl') == '0' and level.getElementsByTagName('w:lvlText')[
-            #                             0].getAttribute('w:val') != '%1' and level.getElementsByTagName('w:lvlText')[
-            #                             0].getAttribute('w:val') != '%1.':
-            #                             match = False
-            #                             break
-            #                         elif level.getAttribute('w:ilvl') == '1' and \
-            #                                 level.getElementsByTagName('w:lvlText')[0].getAttribute('w:val') != '%1.%2':
-            #                             for s in self.content_text_list:
-            #                                 if self.levenshteinDistance(text, re.sub('[0-9\.．\s]', '', s)) < len(
-            #                                         re.sub('[0-9\.．\s]', '', s)) * 0.2:
-            #                                     print("levenshteinDistance, True")
-            #                                     match = True
-            #                                     break
-            #                             break
-            #                         elif level.getAttribute('w:ilvl') == '2':
-            #                             if level.getElementsByTagName('w:lvlText')[0].getAttribute(
-            #                                     'w:val') != '%1.%2.%3':
-            #                                 match = False
-            #                                 break
-            #                             match = True
-            #
-            #                     break
-            #             break
-
-            # 部分三级标题在目录中并没有出现,但是在正文中仍然祖籍为三级标题,为了正确匹配到这部分标题,我们需要将这段注释掉
-            # if type == 1 or type == 0:  # 若匹配的样式是1. xxxx的样式，则查找目录是否有相同的内容，如果有，则判断为标题。因为有些字数少的正文的编号项目也有可能匹配成功。
-            #     for t in self.content_text_list:
-            #         if re.sub('[0-9\.．\s]', '', text) in re.sub('[0-9\.．\s]', '', t):
-            #             break
-            #     else:
-            #         match = False
-
-        # if type == 1:
-        #     print(self.getFullText(p))
-        # if match:
-        #     print("match , ", type)
-        # print(self.getFullText(p))
-        # print("*****************", match, type)
         return match, type
 
     @staticmethod
     def valid_distance(x, y):  # x -> y
         x_levels, y_levels = [int(x_item) for x_item in x.split(".")], [int(y_item) for y_item in y.split('.')]
-        # result = False
         min_length = min(len(x_levels), len(y_levels))
         if len(x_levels) >= len(y_levels):
             # 1.2 -> 1.3
@@ -351,78 +265,21 @@ class Util:
             reg_match = reg.search(text)
             # print(reg_match)
             _order = reg_match.group()
-            sig = '.'
-            if '-' in _order:
+            if '.' in _order:
+                sig = '.'
+            elif '-' in _order:
                 sig = '-'
             type = len(_order.split(sig))
             return True, type
         return False, 0
 
-    # def getTitle(self):
-    #     pass
-    #     # content_set = set()
-    #     # title_list = []
-    #     # title_began = False
-    #     # # old_order = ""
-    #     # for p in self.doc.getElementsByTagName('w:p'):
-    #     #     match, type = self.isTitle(p)
-    #     #     pic_match = self.isPicTitle(p)
-    #     #     tab_match = self.isTabTitle(p)
-    #     #
-    #     #     # 增加图表的标题识别
-    #     #     if title_began:
-    #     #         reg = re.compile(r'^\d+(\.\d+)*')
-    #     #         reg_match = reg.search(self.getFullText(p))
-    #     #         if reg_match:
-    #     #             _order = reg_match.group()
-    #     #         else:
-    #     #             _order = ""
-    #     #         if pic_match:
-    #     #             title_list.append((4, self.getFullText(p), _order))
-    #     #         if tab_match:
-    #     #             title_list.append((5, self.getFullText(p), _order))
-    #     #
-    #     #     if match:
-    #     #         p_content = re.sub(re.compile(r'（\d+）'), "", self.getFullText(p))
-    #     #         # print(p_content)
-    #     #         if not title_began:
-    #     #             if p_content not in content_set:
-    #     #                 content_set.add(p_content)
-    #     #             else:
-    #     #                 title_began = True
-    #     #                 # title_list.append((type, p_content))
-    #     #         reg = re.compile(r'^\d+(\.\d+)*')
-    #     #         reg_match = reg.search(p_content)
-    #     #         if reg_match:
-    #     #             order = reg_match.group()
-    #     #         else:
-    #     #             order = '0'
-    #     #         # if old_order != "" and order != '0':
-    #     #         #     valid_result = self.valid_distance(old_order, order)
-    #     #         #     if not valid_result:
-    #     #         #         continue
-    #     #         # old_order = order
-    #     #         if title_began:
-    #     #             title_list.append((type, p_content, order))
-    #     # # for each in title_list:
-    #     # #     print(each)
-    #     # return title_list
-
-    # def getPicTabTitle(self):
-    #     tab_pic_titles = []
-    #     for p in self.doc.getElementsByTagName('w:p'):
-    #         tab_match = self.isTabTitle(p)
-    #         pic_match = self.isPicTitle(p)
-    #         if tab_match or pic_match:
-    #             order = re.search(r'\d+(\.\d+)*', self.getFullText(p)).group()
-    #             _type = 4 if tab_match else 5
-    #             tab_pic_titles.append((_type, self.getFullText(p), order))
-    #     return tab_pic_titles
-
     def getFullContext(self):
         # 目录结束
         content_began = False
         content_over = False
+        if not self.doc.getElementsByTagName("w:sdt"):
+            content_began = False
+            content_over = True
         # 正文文本开始
         # text_begin = False
         # title_list = self.getTitle()
@@ -549,6 +406,60 @@ class Util:
         #     print(each)
         return result
 
+    def get_comment_method_2(self):
+        # method 2 (提取正文中的comment)
+        comments = []  # [(comment_id, comment_refer, comment_content]
+        for paragraph in self.doc.getElementsByTagName('w:p'):
+            paragraph_txt = paragraph.toxml()
+            reg = re.compile(r'<w:commentRangeStart w:id="(\d)+"/>(.*?)<w:commentRangeEnd w:id="(\d+)"/>')
+            for elem in reg.findall(paragraph_txt):
+                if elem[0] != elem[2]:
+                    raise Exception("正则匹配失败，前后comment_id不匹配")
+                comment_id = elem[0]
+                try:
+                    refer_run_dom = minidom.parseString(
+                        "<root xmlns:w='http://example.com/namespace'>" + elem[1] + "</root>")
+                except Exception as error:
+                    refer_run_dom = minidom.parseString("<root xmlns:w='http://example.com/namespace'></root>")
+                    print(error)
+                refer_run_text = self.getFullText(refer_run_dom)
+                comments.append([comment_id, refer_run_text, self.comment_dict[comment_id]])
+                # {"comment_id": comment_id,"refer_text": refer_run_text,"comment_content": self.comment_dict[id]}
+        print(comments)
+        return comments
+
+    def get_comment(self):
+        # method 1 (提取正文中的comment)
+        comments = []  # [(comment_id, comment_refer, comment_content]
+        for paragraph in self.doc.getElementsByTagName('w:p'):
+            com_range_start, com_range_end = False, False
+            comments = []
+            comment_temp = ""
+            comment_id = ""
+            for child_node in paragraph.childNodes:
+                if child_node.tagName == "w:commentRangeStart":
+                    comment_id = child_node.getAttribute("w:id")
+                    com_range_start = True
+                    com_range_end = False
+                    continue
+                if child_node.tagName == "w:commentRangeEnd":
+                    comments.append([comment_id, comment_temp, self.comment_dict[comment_id]])
+                    comment_temp = ""
+                    com_range_start = False
+                    com_range_end = True
+                    continue
+                if com_range_start and not com_range_end:
+                    comment_temp += self.getFullText(child_node)
+                if not com_range_start and com_range_end:
+                    # 这里就是普通文本
+                    pass
+
+        print(comments)
+        return
+
+    def test_numbering(self):
+        print(self.numbering)
+
     def test_method(self):
         # document = self.doc.childNodes[0]
         # body = document.childNodes[0]
@@ -562,6 +473,3 @@ class Util:
         #
         # return
         return
-
-    def test_numbering(self):
-        print(self.numbering)
