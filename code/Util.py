@@ -68,6 +68,34 @@ class Util:
         # return text
         return re.sub(r'(【.*?】)', '', text)  # 匹配替换为选择的文本
 
+    def getFullTextAndCommentOfPara(self, paragraph):
+        text = ""
+        comments = []  # [(comment_id, comment_refer, comment_content]
+        com_range_start, com_range_end = False, False
+        comment_begin_index = 0
+        comment_id = ""
+        for child_node in paragraph.childNodes:
+            if child_node.tagName == "w:commentRangeStart":
+                comment_id = child_node.getAttribute("w:id")
+                com_range_start = True
+                com_range_end = False
+                comment_begin_index = len(text)
+                continue
+            if child_node.tagName == "w:commentRangeEnd":
+                # comment_end_index = len(text)
+                comments.append([comment_id, (comment_begin_index, len(text)), self.comment_dict[comment_id]])
+                com_range_start = False
+                com_range_end = True
+                continue
+            if com_range_start and not com_range_end:
+                text += self.getFullText(child_node)
+            if not com_range_start and com_range_end:
+                text += self.getFullText(child_node)
+                pass
+        print(text)
+        print(comments)
+        return text, comments
+
     def getNodeText(self, node) -> str:
         text = ""
         for child_node in node.childNodes:
@@ -298,11 +326,12 @@ class Util:
             except AttributeError as error:
                 print("", end="")
 
-            # 過濾空格
+            # 過濾空的paragraph
             if self.getFullText(p) == "":
                 continue
 
             # print(self.getFullText(p))
+            # 检测到目录的识别并未开始且并未结束
             if not content_began and not content_over:
                 if p.getElementsByTagName('w:pPr'):
                     pPr = p.getElementsByTagName('w:pPr')[0]
@@ -314,8 +343,8 @@ class Util:
                             content_began = True
                             # print("狀態變化1：content_began為", content_began, "content_over為", content_over)
                             continue
+            # 检测到目录的识别已开始但未结束
             if content_began and not content_over:
-                # print("------------------")
                 if p.getElementsByTagName('w:pPr'):
                     pPr = p.getElementsByTagName('w:pPr')[0]
                     if pPr.getElementsByTagName("w:pStyle"):
@@ -332,6 +361,7 @@ class Util:
                         content_over = True
                         # print("狀態變化3：content_began為", content_began, "content_over為", content_over)
                 else:
+                    # 检测到目录识别已经结束
                     content_began = False
                     content_over = True
                     # print("狀態變化4：content_began為", content_began, "content_over為", content_over)
@@ -346,11 +376,8 @@ class Util:
             #         text_begin = True
             #         content_over = False
 
-            # if not content_began and content_over and text_begin:
-            # print("----------------------------------------")
+            # 其实这里只需要判断content_over，content_began可能会有误判断的可能性
             if not content_began and content_over:
-                # print("*****")
-                # print(self.getFullText(p))
                 is_title_result = self.isTitle(p)
                 is_tab_title_result = self.isTabTitle(p)
                 is_pic_title_result = self.isPicTitle(p)
@@ -407,7 +434,7 @@ class Util:
         return result
 
     def get_comment_method_2(self):
-        # method 2 (提取正文中的comment)
+        # method 2 (适合只提取comments而不提取其他内容)
         comments = []  # [(comment_id, comment_refer, comment_content]
         for paragraph in self.doc.getElementsByTagName('w:p'):
             paragraph_txt = paragraph.toxml()
@@ -429,31 +456,11 @@ class Util:
         return comments
 
     def get_comment(self):
-        # method 1 (提取正文中的comment)
-        comments = []  # [(comment_id, comment_refer, comment_content]
+        comments = []  # [(标注的ID, 正文中标注引用的内容, 标注的内容]
         for paragraph in self.doc.getElementsByTagName('w:p'):
-            com_range_start, com_range_end = False, False
-            comments = []
-            comment_temp = ""
-            comment_id = ""
-            for child_node in paragraph.childNodes:
-                if child_node.tagName == "w:commentRangeStart":
-                    comment_id = child_node.getAttribute("w:id")
-                    com_range_start = True
-                    com_range_end = False
-                    continue
-                if child_node.tagName == "w:commentRangeEnd":
-                    comments.append([comment_id, comment_temp, self.comment_dict[comment_id]])
-                    comment_temp = ""
-                    com_range_start = False
-                    com_range_end = True
-                    continue
-                if com_range_start and not com_range_end:
-                    comment_temp += self.getFullText(child_node)
-                if not com_range_start and com_range_end:
-                    # 这里就是普通文本
-                    pass
-
+            com_text, com_list = self.getFullTextAndCommentOfPara(paragraph)
+            for each_comment in com_list:
+                comments.append([each_comment[0], com_text[each_comment[1][0]: each_comment[1][1]], each_comment[2]])
         print(comments)
         return
 
@@ -469,7 +476,6 @@ class Util:
         # print(len(first_paragraph.childNodes))
         # for each in first_paragraph.childNodes:
         #     print(each.tagName)
-        # print()
-        #
-        # return
+        # for para in self.doc.getElementsByTagName("w:p"):
+        #     self.getFullTextAndCommentOfPara(para)
         return
