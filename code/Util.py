@@ -1,3 +1,4 @@
+import json
 import xml.dom.minidom
 import zipfile
 import os
@@ -8,6 +9,72 @@ from xml.dom import minidom
 from xml.dom.minidom import parseString
 
 project_dir = os.path.abspath("../../DocxFormatValid/")
+
+
+class Style:
+    def __init__(self):
+        # 注意默认属性的影响
+        self.font_ascii = "Times New Roman"
+        self.font_eastAsia = "宋体"
+        self.font_sz = get_pound_of_font_sz("小四")
+        self.font_szCs = ""
+        self.font_b = "0"
+        self.font_bCs = "0"
+        self.font_i = "0"
+        self.font_u = "0"
+        self.font_color = ""
+        self.font_shd = ""
+        self.highlight = "0"
+
+        self.jc = "left"
+        self.ind = "0"  # w:ind
+        self.spacing = "240"
+
+    def __str__(self):
+        return json.dumps({
+            "英文字体：": self.font_ascii,
+            "中文字体：": self.font_eastAsia,
+            "中文字号：": self.font_sz,
+            "复杂字号：": self.font_szCs,
+            "是否粗体：": self.font_b,
+            "是否粗体2：": self.font_bCs,
+            "是否斜体：": self.font_i,
+            "是否下划线：": self.font_u,
+            "颜色：": self.font_color,
+            "背景颜色：": self.font_shd,
+            "是否高亮：": self.highlight,
+            "对齐方式": self.jc,
+            "缩进设置：": self.ind,
+            "行距设置": self.spacing
+        }, ensure_ascii=False)
+
+
+def get_pound_of_font_sz(font_sz: str):
+    WordFontSizeDict = {
+        "初号": "84",
+        "小初": "72",
+        "一号": "52",
+        "小一": "48",
+        "二号": "44",
+        "小二": "36",
+        "三号": "32",
+        "小三": "30",
+        "四号": "28",
+        "小四": "24",
+        "五号": "21",
+        "小五": "18",
+        "六号": "15",
+        "小六": "13",
+        "七号": "11",
+        "八号": "10"
+    }
+    num_reg = re.compile(r'\d+')
+    if num_reg.findall(font_sz):
+        return str(2 * int(font_sz))
+    if font_sz in WordFontSizeDict:
+        return WordFontSizeDict[font_sz]
+    else:
+        raise Exception("请检查字号是否输入正确")
 
 
 class Util:
@@ -23,6 +90,7 @@ class Util:
 
         self.docx_filename = file_name
         self.new_docx_file = "new_" + self.docx_filename
+        self.error_log_text = ""
 
         self.unzip()
         self.doc: xml.dom.minidom.Element = minidom.parse(
@@ -40,7 +108,7 @@ class Util:
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) else minidom.Document()
         self.create_style_xml_index_by_styleId()
         self.create_comment_xml_index_by_commentId()
-        print("comment_dict:", self.comment_dict)
+        print("comment_dict:", self.style_dict)
         return
 
     def unzip(self):
@@ -116,6 +184,7 @@ class Util:
         for each_style in self.styles.getElementsByTagName("w:style"):
             style_id = each_style.getAttribute("w:styleId")
             self.style_dict[style_id] = each_style
+        return
 
     def getPointsOfStyle(self, styleId):
         points = 0
@@ -473,6 +542,103 @@ class Util:
     @staticmethod
     def print_log(content: str):
         print(content)
+        return
+
+    def print_error(self, content: str, para: xml.dom.minidom.Element):
+        print(content)
+        return
+
+    def get_style_from_styleId(self, style_id: str):
+        style: xml.dom.minidom.Element = self.style_dict[style_id]
+        format_style = Style()
+        if style.getElementsByTagName("w:rPr"):
+            run_property = style.getElementsByTagName("w:rPr")[0]
+            if run_property.getElementsByTagName("w:rFonts"):
+                if run_property.getElementsByTagName("w:rFonts")[0].getAttribute("w:eastAsia"):
+                    format_style.font_eastAsia = run_property.getElementsByTagName("w:rFonts")[0].getAttribute(
+                        "w:eastAsia")
+                if run_property.getElementsByTagName("w:rFonts")[0].getAttribute("w:ascii"):
+                    format_style.font_ascii = run_property.getElementsByTagName("w:rFonts")[0].getAttribute("w:ascii")
+            if run_property.getElementsByTagName("w:sz"):
+                format_style.font_sz = run_property.getElementsByTagName("w:sz")[0].getAttribute("w:val")
+            if run_property.getElementsByTagName("w:szCs"):
+                format_style.font_sz = run_property.getElementsByTagName("w:szCs")[0].getAttribute("w:val")
+            if run_property.getElementsByTagName("w:color"):
+                format_style.font_color = run_property.getElementsByTagName("w:color")[0].getAttribute("w:val")
+            if run_property.getElementsByTagName("w:b"):
+                format_style.font_b = "1"
+            if run_property.getElementsByTagName("w:bCs"):
+                format_style.font_bCs = "1"
+
+            if run_property.getElementsByTagName("w:i"):
+                format_style.font_i = "1"
+            if run_property.getElementsByTagName("w:u"):
+                format_style.font_u = "1"
+
+        if style.getElementsByTagName("w:pPr"):
+            para_property = style.getElementsByTagName("w:pPr")[0]
+            if para_property.getElementsByTagName("w:jc"):
+                format_style.jc = para_property.getElementsByTagName("w:jc")[0].getAttribute("w:val")
+            if para_property.getElementsByTagName("w:spacing"):
+                format_style.spacing = para_property.getElementsByTagName("w:spacing")[0].getAttribute("w:line")
+        return format_style
+
+    def get_style_of_para(self, para: xml.dom.minidom.Element):
+        style_class = Style()
+        if para.getElementsByTagName("w:pPr"):
+            para_property = para.getElementsByTagName("w:pPr")[0]
+            if para_property.getElementsByTagName("w:pStyle"):
+                pStyle = para_property.getElementsByTagName("w:pStyle")[0]
+                style_id = pStyle.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "val")
+                # 首先检测是否有style_id,以及获取style_id的style属性
+                style_class = self.get_style_from_styleId(style_id)
+            if para_property.getElementsByTagName("w:jc"):
+                style_class.js = para_property.getElementsByTagName("w:jc")[0].getAttribute("w:val")
+            if para_property.getElementsByTagName("w:spacing"):
+                style_class.spacing = para_property.getElementsByTagName("w:spacing")[0].getAttribute("w:line")
+            if para_property.getElementsByTagName("w:rPr"):
+                StyleOfrPr = self.get_style_of_run(para_property.getElementsByTagName("w:rPr")[0])
+                style_class.font_eastAsia = StyleOfrPr.font_eastAsia if StyleOfrPr.font_eastAsia else style_class.font_eastAsia
+                style_class.font_ascii = StyleOfrPr.font_ascii if StyleOfrPr.font_ascii else style_class.font_ascii
+                style_class.font_b = StyleOfrPr.font_b if StyleOfrPr.font_b else style_class.font_b
+                style_class.font_bCs = StyleOfrPr.font_bCs if StyleOfrPr.font_bCs else style_class.font_bCs
+                style_class.font_sz = StyleOfrPr.font_sz if StyleOfrPr.font_sz else style_class.font_sz
+                style_class.font_szCs = StyleOfrPr.font_szCs if StyleOfrPr.font_szCs else style_class.font_szCs
+                style_class.font_i = StyleOfrPr.font_i if StyleOfrPr.font_i else style_class.font_i
+                style_class.font_u = StyleOfrPr.font_u if StyleOfrPr.font_u else style_class.font_u
+                style_class.font_color = StyleOfrPr.font_color if StyleOfrPr.font_color else style_class.font_color
+        return style_class
+
+    def get_style_of_run(self, run: xml.dom.minidom.Element):
+        # run的属性有几种，继承自pPr的rPr属性，内嵌的rPr属性，以及style中的rPr属性
+        # 先检测w:rStyle，再检测w:rPr
+        style_class = Style()
+        if run.getElementsByTagName("w:rPr"):
+            run_property = run.getElementsByTagName("w:rPr")[0]
+            if run_property.getElementsByTagName("w:rStyle"):
+                rStyle = run_property.getElementsByTagName("w:rStyle")[0]
+                style_id = rStyle.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main", "val")
+                style_class = self.get_style_from_styleId(style_id)
+            if run_property.getElementsByTagName("w:rFonts"):
+                if run_property.getElementsByTagName("w:rFonts")[0].getAttribute("w:eastAsia"):
+                    style_class.font_eastAsia = run_property.getElementsByTagName("w:rFonts")[0].getAttribute(
+                        "w:eastAsia")
+                style_class.font_ascii = run_property.getElementsByTagName("w:rFonts")[0].getAttribute("w:ascii")
+            if run_property.getElementsByTagName("w:b"):
+                style_class.font_b = "1"
+            if run_property.getElementsByTagName("w:bCs"):
+                style_class.font_bCs = "1"
+            if run_property.getElementsByTagName("w:sz"):
+                style_class.font_sz = run_property.getElementsByTagName("w:sz")[0].getAttribute("w:val")
+            if run_property.getElementsByTagName("w:szCs"):
+                style_class.font_szCs = run_property.getElementsByTagName("w:szCs")[0].getAttribute("w:val")
+            if run_property.getElementsByTagName("w:i"):
+                style_class.font_i = "1"
+            if run_property.getElementsByTagName("w:u"):
+                style_class.font_u = "1"
+            if run_property.getElementsByTagName("w:color"):
+                style_class.font_color = run_property.getElementsByTagName("w:color")[0].getAttribute("w:val")
+        return style_class
 
     def DetectPaper(self):
         def insert_index(temp_index: int):
@@ -542,16 +708,15 @@ class Util:
         self.DetectCopyright(IndexList[2], IndexList[3] - 1)
         self.DetectAbstract(IndexList, 3, 5)
         self.DetectCatalogue(IndexList[5], IndexList[6])
-        text_end_index = 6
-        for i in range(6, len(IndexList)):
-            if self.getFullText(self.docx_body.childNodes[IndexList[i]]).replace(" ", "") == "致谢":
-                text_end_index = i
-                break
-        self.DetectText(IndexList, 6, text_end_index)
-        self.DetectAcknowledge(IndexList[text_end_index], IndexList[text_end_index + 1])
-        self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
-        self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
-        # pass
+        # text_end_index = 6
+        # for i in range(6, len(IndexList)):
+        #     if self.getFullText(self.docx_body.childNodes[IndexList[i]]).replace(" ", "") == "致谢":
+        #         text_end_index = i
+        #         break
+        # self.DetectText(IndexList, 6, text_end_index)
+        # self.DetectAcknowledge(IndexList[text_end_index], IndexList[text_end_index + 1])
+        # self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
+        # self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
 
     def DetectCover(self, index_list: list, index_start: int, index_end: int):
         self.print_log("Detecting Paper CCover")
@@ -559,22 +724,180 @@ class Util:
         self.DetectEnglishCover(index_list[index_start + 1], index_list[index_end])
         pass
 
+    def checkStyle(self, para, StyleDict):
+        print("-------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------------------")
+        print(self.getFullText(para))
+        for elem in para.getElementsByTagName("w:r"):
+            if elem.nodeName == "w:r":
+                style_class = self.get_style_of_run(elem)
+                print(style_class, StyleDict)
+                if style_class.font_b != StyleDict["font_b"]:
+                    self.print_error("粗体使用错误", elem)
+                # if style_class.font_bCs != "1":
+                #     self.print_error("请使用粗体", elem)
+                if style_class.font_sz != get_pound_of_font_sz(StyleDict["font_sz"]):
+                    self.print_error("字体大小错误，应当为" + StyleDict["font_sz"] + "，而实际上是" + style_class.font_sz,
+                                     elem)
+                if style_class.font_eastAsia != StyleDict["font_eastAsia"]:
+                    self.print_error("中文字体使用错误，应为" + StyleDict[
+                        "font_eastAsia"] + "，而实际上是" + style_class.font_eastAsia, elem)
+                if StyleDict["font_ascii"] != "":
+                    if style_class.font_ascii not in [StyleDict["font_ascii"], ""]:
+                        self.print_error(
+                            "英文字体使用错误，应为" + StyleDict["font_ascii"] + "，而实际上是" + style_class.font_ascii,
+                            elem)
+                if style_class.font_color not in ["", StyleDict["font_color"]]:
+                    self.print_error("颜色使用错误，应为" + "黑色", elem)
+
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
+        def check_student_number(para: xml.dom.minidom.Element):
+            student_number_reg = re.compile(r'M20\d{7}')
+            if not student_number_reg.findall(self.getFullText(para).replace(" ", "")):
+                self.print_error("学号不存在或位数错误", para)
+            return
+
+        def check_school_number(para: xml.dom.minidom.Element):
+            if "10487" not in self.getFullText(para).replace(" ", ""):
+                self.print_error("学校代码不存在或错误", para)
+            return
+
+        def check_paper_type_style(para: xml.dom.minidom.Element):
+            print("----------checking type info----------")
+            StyleDict = {
+                "font_b": "1",
+                "font_sz": "45",
+                "font_eastAsia": "华文中宋",
+                "font_ascii": "Times New Roman",
+                "font_color": "000000"
+            }
+            self.checkStyle(para, StyleDict)
+            print("--------------------over--------------------")
+
+        def check_paper_title_style(para: xml.dom.minidom.Element):
+            print("----------checking title info----------")
+            StyleDict = {
+                "font_b": "1",
+                "font_sz": "一号",
+                "font_eastAsia": "宋体",
+                "font_ascii": "Times New Roman",
+                "font_color": "000000"
+            }
+            self.checkStyle(para, StyleDict)
+            print("--------------------over--------------------")
+            return
+
+        def check_paper_writer_style(para: xml.dom.minidom.Element):
+            print("----------checking paper writer info----------")
+            StyleDict = {
+                "font_b": "1",
+                "font_sz": "小三",
+                "font_eastAsia": "宋体",
+                "font_ascii": "Times New Roman",
+                "font_color": "000000"
+            }
+            self.checkStyle(para, StyleDict)
+            print("--------------------over--------------------")
+            return
+
+        checkList = [[check_student_number, "分类号"], [check_school_number, "学校代码"],
+                     [check_paper_type_style, "硕士学位论文"], [check_paper_title_style, ""],
+                     [check_paper_writer_style, "学位申请人"]]
         self.print_log("----------Detecting Paper Chinese Cover----------")
+        check_index = 0
         for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+            if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "":
+                continue
+            if check_index < len(checkList):
+                check_item = checkList[check_index]
+                if check_item[1] in self.getFullText(self.docx_body.childNodes[index]).replace(" ", ""):
+                    check_item[0](self.docx_body.childNodes[index])
+                    check_index += 1
+                    continue
+                else:
+                    if check_item[1] == "":
+                        check_item[0](self.docx_body.childNodes[index])
+                        check_index += 1
+                        continue
+        if check_index < len(checkList):
+            self.print_log("匹配出错，部分标签未匹配")
+
+            # print(self.docx_body.childNodes[index].tagName)
+            # print(self.getFullText(self.docx_body.childNodes[index]), end="\n\n")
+
         self.print_log("--------------------------------------------------")
 
     def DetectEnglishCover(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper English Cover----------")
+        # index = para_index_begin
+        item_para_list = []
+        if "Dissertation Submitted in Partial Fulfillment" not in self.getFullText(
+                self.docx_body.childNodes[para_index_begin]):
+            raise Exception("论文英文标题匹配错误")
         for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+            if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") != "":
+                item_para_list.append(index)
+        self.print_log("---!----")
+        StyleDictOfEnglishType = {
+            "font_b": "1",
+            "font_sz": "小三",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        self.checkStyle(self.docx_body.childNodes[item_para_list[0]], StyleDictOfEnglishType)
+        StyleDictOfEnglishTitle = {
+            "font_b": "1",
+            "font_sz": "小二",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        self.checkStyle(self.docx_body.childNodes[item_para_list[1]], StyleDictOfEnglishTitle)
+        StyleDictOfEnglishWriterInfo = {
+            "font_b": "1",
+            "font_sz": "小三",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        for index in range(2, 5):
+            self.checkStyle(self.docx_body.childNodes[item_para_list[index]], StyleDictOfEnglishWriterInfo)
+        StyleDictOfEnglishSchoolInfo = {
+            "font_b": "1",
+            "font_sz": "小三",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        for index in range(5, 8):
+            self.checkStyle(self.docx_body.childNodes[item_para_list[index]], StyleDictOfEnglishSchoolInfo)
         self.print_log("--------------------------------------------------")
 
     def DetectCopyright(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Copyright----------")
+        title_style_dict = {
+            "font_b": "1",
+            "font_sz": "三号",
+            "font_eastAsia": "黑体",
+            "font_ascii": "",
+            "font_color": "000000"
+        }
+        text_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "",
+            "font_color": "000000"
+        }
         for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+            if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "":
+                continue
+            elif self.getFullText(self.docx_body.childNodes[index]).replace(" ",
+                                                                            "") == "独创性声明" or self.getFullText(
+                self.docx_body.childNodes[index]).replace(" ", "") == "学位论文版权使用授权书":
+                self.checkStyle(self.docx_body.childNodes[index], title_style_dict)
+            else:
+                self.checkStyle(self.docx_body.childNodes[index], text_style_dict)
         self.print_log("--------------------------------------------------")
 
     def DetectAbstract(self, index_list, index_start, index_end):
@@ -583,21 +906,157 @@ class Util:
 
     def DetectChineseAbstract(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Chinese Abstract----------")
-        for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+        index = para_index_begin
+        while self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "":
+            index += 1
+        if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "摘要":
+            if not self.getFullText(self.docx_body.childNodes[index]).strip() == "摘  要":
+                self.print_error("摘要二字中间应该要留两个空格", self.docx_body.childNodes[index])
+        text_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "",
+            "font_color": "000000"
+        }
+        # for index in range(temp_index, para_index_end):
+        while index < para_index_end:
+            if "关键词：" in self.getFullText(self.docx_body.childNodes[index]).strip():
+                break
+            self.checkStyle(self.docx_body.childNodes[index], text_style_dict)
+            index += 1
+        keyword_list = re.split(re.compile(r'[;；]'),
+                                self.getFullText(self.docx_body.childNodes[index]).strip().replace("关键词：", ""))
+        if not 3 <= len(keyword_list) <= 8:
+            self.print_error("关键字数量一般为3~8个", self.docx_body.childNodes[index])
+        keyword_title_style_dict = {
+            "font_b": "1",
+            "font_sz": "小四",
+            "font_eastAsia": "黑体",
+            "font_ascii": "",
+            "font_color": "000000"
+        }
+        keyword_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "",
+            "font_color": "000000"
+        }
+        print(self.getFullText(self.docx_body.childNodes[index]))
+        bold_key_word = True
+        text1 = ""
+        for elem in self.docx_body.childNodes[index].childNodes:
+
+            if elem.nodeName == "w:r":
+                if bold_key_word:
+                    self.checkStyle(elem, keyword_title_style_dict)
+                    text1 += self.getFullText(elem).replace(" ", "").strip()
+                    if text1 == "关键词：":
+                        bold_key_word = False
+                else:
+                    self.checkStyle(elem, keyword_style_dict)
+
         self.print_log("--------------------------------------------------")
-        pass
 
     def DetectEnglishAbstract(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper English Abstract----------")
-        for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+        index = para_index_begin
+        while self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "":
+            index += 1
+        if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "").strip() != "Abstract":
+            self.print_error("此处应为Abstract", self.docx_body.childNodes[index])
+        text_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        # for index in range(temp_index, para_index_end):
+        while index < para_index_end:
+            if "Key words:" in self.getFullText(self.docx_body.childNodes[index]).strip():
+                break
+            self.checkStyle(self.docx_body.childNodes[index], text_style_dict)
+            index += 1
+        keyword_list = re.split(re.compile(r'[,]'),
+                                self.getFullText(self.docx_body.childNodes[index]).strip().replace("Key words:", ""))
+        if not 3 <= len(keyword_list) <= 8:
+            self.print_error("关键字数量一般为3~8个", self.docx_body.childNodes[index])
+        keyword_title_style_dict = {
+            "font_b": "1",
+            "font_sz": "小四",
+            "font_eastAsia": "黑体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        keyword_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        bold_key_word = True
+        text1 = ""
+        for elem in self.docx_body.childNodes[index].childNodes:
+
+            if elem.nodeName == "w:r":
+                if bold_key_word:
+                    self.checkStyle(elem, keyword_title_style_dict)
+                    text1 += self.getFullText(elem).replace(" ", "").strip()
+                    if text1 == "关键词：":
+                        bold_key_word = False
+                else:
+                    self.checkStyle(elem, keyword_style_dict)
         self.print_log("--------------------------------------------------")
 
     def DetectCatalogue(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Catalogue----------")
+        level0_reg = re.compile(r'^目\s*录$')
+        level1_reg = re.compile(r'^摘\s*要|^Abstract|^致谢|^参考文献|^附录\d+\s+|^\d+\s*.+')
+        level2_reg = re.compile(r'\d+\.\d+\s*[\u4e00-\u9fa5a-zA-Z]+.?')
+        level0_style_dict = {
+            "font_b": "1",
+            "font_sz": "三号",
+            "font_eastAsia": "黑体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        level1_style_dict = {
+            "font_b": "1",
+            "font_sz": "四号",
+            "font_eastAsia": "黑体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        level2_style_dict = {
+            "font_b": "0",
+            "font_sz": "四号",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
         for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+            print("------------------------------------------------------------------------")
+            if level2_reg.match(self.getFullText(self.docx_body.childNodes[index]).replace(" ","").strip()):
+                print("2--------------------",self.getFullText(self.docx_body.childNodes[index]))
+                self.checkStyle(self.docx_body.childNodes[index], level2_style_dict)
+                continue
+
+            if level1_reg.match(self.getFullText(self.docx_body.childNodes[index]).replace(" ","").strip()):
+                print("1--------------------",self.getFullText(self.docx_body.childNodes[index]))
+                self.checkStyle(self.docx_body.childNodes[index], level1_style_dict)
+                continue
+            print("2")
+            if level0_reg.match(self.getFullText(self.docx_body.childNodes[index]).replace(" ","").strip()):
+                print("0--------------------",self.getFullText(self.docx_body.childNodes[index]))
+                self.checkStyle(self.docx_body.childNodes[index], level0_style_dict)
+                continue
+
+
+
+            print("--------")
         self.print_log("--------------------------------------------------")
         pass
 
@@ -624,8 +1083,8 @@ class Util:
     def DetectAppendixes(self, index_list: list, index_start: int, index_end: int):
         self.print_log("----------Detecting Paper Appendixes----------")
         for i in range(index_start, index_end - 1):
-            self.print_log("----------Detecting Paper Appendix" + str(i-index_start+1)+"----------")
-            self.DetectAppendix(index_list[i], index_list[i+1])
+            self.print_log("----------Detecting Paper Appendix" + str(i - index_start + 1) + "----------")
+            self.DetectAppendix(index_list[i], index_list[i + 1])
         pass
 
     def DetectAppendix(self, para_index_begin, para_index_end):

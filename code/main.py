@@ -5,8 +5,8 @@ if __name__ == "__main__":
     # tools = Util("胡广浩的毕业论文（定稿）v2.docx")
     # tools = Util("标注测试文档2.docx")
     # tools = Util("理工科-硕士-华中科技大学学位论文参考模板 - 副本.docx")
-    # tools = Util("理工科-硕士-华中科技大学学位论文参考模板.docx")
-    tools = Util("硕士论文方晓亮 v2.docx")
+    tools = Util("理工科-硕士-华中科技大学学位论文参考模板.docx")
+    # tools = Util("硕士论文方晓亮 v2.docx")
 
     # result = tools.getFullContext()
     # for each in result:
