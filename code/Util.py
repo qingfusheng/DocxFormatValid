@@ -1,3 +1,4 @@
+import xml.dom.minidom
 import zipfile
 import os
 import re
@@ -22,14 +23,19 @@ class Util:
 
         self.docx_filename = file_name
         self.new_docx_file = "new_" + self.docx_filename
+
         self.unzip()
-        self.doc = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'document.xml'))
-        self.styles = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'styles.xml'))
-        self.themes = minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, 'word', 'theme', 'theme1.xml'))
-        self.numbering = minidom.parse(
+        self.doc: xml.dom.minidom.Element = minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'document.xml'))
+        self.docx_body: xml.dom.minidom.Element = self.doc.childNodes[0].childNodes[0]
+        self.styles: xml.dom.minidom.Element = minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'styles.xml'))
+        self.themes: xml.dom.minidom.Element = minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'theme', 'theme1.xml'))
+        self.numbering: xml.dom.minidom.Element = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) if os.path.exists(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) else minidom.Document()
-        self.comments = minidom.parse(
+        self.comments: xml.dom.minidom.Element = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) if os.path.exists(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) else minidom.Document()
         self.create_style_xml_index_by_styleId()
@@ -464,12 +470,175 @@ class Util:
         print(comments)
         return
 
-    def test_numbering(self):
-        print(self.numbering)
+    @staticmethod
+    def print_log(content: str):
+        print(content)
+
+    def DetectPaper(self):
+        def insert_index(temp_index: int):
+            print("temp_index", temp_index)
+            if self.getFullText(docx_body_childs[temp_index]):
+                IndexList.append(temp_index)
+            else:
+                return
+
+        CoverIndex = 0
+        IndexList = [CoverIndex]
+        # self.docx_body = self.doc.childNodes[0].childNodes[0]
+        docx_body_childs = self.docx_body.childNodes
+        title_list = ["独创性声明", "摘要", "Abstract", "目录", "绪论", "致谢", "参考文献",
+                      "附录1  攻读硕士学位期间取得的学术成果", "附录2  其它附录"]
+        if not self.doc.getElementsByTagName("w:sdt"):
+            print("输入DOCX文档没有目录，请添加目录后重试1")
+        for index in range(len(docx_body_childs)):
+            paragraph_node: xml.dom.minidom.Element
+            paragraph_node = docx_body_childs[index]
+            if paragraph_node.nodeName == "w:sdt":
+                for child_elem in paragraph_node.getElementsByTagName("w:p"):
+                    if self.getFullText(child_elem).replace(" ", "") in title_list:
+                        if IndexList[-1] != index:
+                            insert_index(index)
+                    else:
+                        print("输入DOCX文档没有目录，请添加目录后重试2")
+                        # exit()
+                continue
+            if paragraph_node.nodeName != "w:p":
+                # 前面已经排除了是目录的情况
+                continue
+
+            """判断分页符"""
+            # if "<w:br w:type=\"page\"/>" in paragraph_node.toxml():
+            #     IndexList.append(index+1)
+            #     continue
+            if paragraph_node.getElementsByTagName("w:br"):
+                if not self.getFullText(paragraph_node):
+                    insert_index(index + 1)
+                    continue
+                else:
+                    child_length = len(paragraph_node.childNodes)
+                    for elem_index in range(child_length):
+                        if paragraph_node.childNodes[elem_index].getElementsByTagName("w:br"):
+                            if elem_index < child_length // 2:
+                                insert_index(index)
+                                continue
+                            else:
+                                insert_index(index + 1)
+                                continue
+
+            """判断分节符"""
+            if paragraph_node.getElementsByTagName("w:sectPr"):
+                if IndexList[-1] != index + 1:
+                    insert_index(index + 1)
+                    continue
+            """判断是否含有标题标签"""
+            if self.getFullText(paragraph_node).replace(" ", "") in title_list:
+                if IndexList[-1] != index:
+                    insert_index(index)
+                    continue
+        # insert_index(len(docx_body_childs))
+        IndexList.append(len(docx_body_childs))
+        print(IndexList)
+        self.DetectCover(IndexList, 0, 2)
+        self.DetectCopyright(IndexList[2], IndexList[3] - 1)
+        self.DetectAbstract(IndexList, 3, 5)
+        self.DetectCatalogue(IndexList[5], IndexList[6])
+        text_end_index = 6
+        for i in range(6, len(IndexList)):
+            if self.getFullText(self.docx_body.childNodes[IndexList[i]]).replace(" ", "") == "致谢":
+                text_end_index = i
+                break
+        self.DetectText(IndexList, 6, text_end_index)
+        self.DetectAcknowledge(IndexList[text_end_index], IndexList[text_end_index + 1])
+        self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
+        self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
+        # pass
+
+    def DetectCover(self, index_list: list, index_start: int, index_end: int):
+        self.print_log("Detecting Paper CCover")
+        self.DetectChineseCover(index_list[index_start], index_list[index_start + 1])
+        self.DetectEnglishCover(index_list[index_start + 1], index_list[index_end])
+        pass
+
+    def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
+        self.print_log("----------Detecting Paper Chinese Cover----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectEnglishCover(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper English Cover----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectCopyright(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper Copyright----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectAbstract(self, index_list, index_start, index_end):
+        self.DetectChineseAbstract(index_list[index_start], index_list[index_start + 1])
+        self.DetectEnglishAbstract(index_list[index_start + 1], index_list[index_end])
+
+    def DetectChineseAbstract(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper Chinese Abstract----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+        pass
+
+    def DetectEnglishAbstract(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper English Abstract----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectCatalogue(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper Catalogue----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+        pass
+
+    def DetectText(self, index_list: list, index_start: int, index_end: int):
+        self.print_log("----------Detecting Paper Text----------")
+        para_index_begin = index_list[index_start]
+        para_index_end = index_list[index_end] - 1
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectAcknowledge(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper Acknowledge----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectReference(self, para_index_begin, para_index_end):
+        self.print_log("----------Detecting Paper Reference----------")
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
+
+    def DetectAppendixes(self, index_list: list, index_start: int, index_end: int):
+        self.print_log("----------Detecting Paper Appendixes----------")
+        for i in range(index_start, index_end - 1):
+            self.print_log("----------Detecting Paper Appendix" + str(i-index_start+1)+"----------")
+            self.DetectAppendix(index_list[i], index_list[i+1])
+        pass
+
+    def DetectAppendix(self, para_index_begin, para_index_end):
+        for index in range(para_index_begin, para_index_end):
+            print(self.getFullText(self.docx_body.childNodes[index]))
+        self.print_log("--------------------------------------------------")
 
     def test_method(self):
+        self.DetectPaper()
         # document = self.doc.childNodes[0]
         # body = document.childNodes[0]
+        # for each in body.childNodes:
+        #     print(each.tagName)
         # first_paragraph = body.childNodes[0]
         # print(len(body.childNodes))
         # print(first_paragraph.tagName)
