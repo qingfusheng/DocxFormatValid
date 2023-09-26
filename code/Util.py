@@ -129,7 +129,7 @@ class Util:
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) else minidom.Document()
         self.create_style_xml_index_by_styleId()
         self.create_comment_xml_index_by_commentId()
-        print("comment_dict:", self.style_dict)
+        # print("comment_dict:", self.style_dict)
         return
 
     def unzip(self):
@@ -266,7 +266,7 @@ class Util:
         text = self.getFullText(p)
         type = 0
         # "25 ", "25.|25.|25，|25、|25或", "11.11", "1.1.11"
-        reg = ["^[1-9][0-9]?\s*[a-zA-Z\u4E00-\u9FA5 ]{2,}", "^[1-9][0-9]*\.[1-9][0-9]*\s*[a-zA-Z\u4E00-\u9FA5]{2,}",
+        reg = ["^[1-9][0-9]?\s*[a-zA-Z\u4E00-\u9FA5]{2,}", "^[1-9][0-9]*\.[1-9][0-9]*\s*[a-zA-Z\u4E00-\u9FA5]{2,}",
                "^[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*\s*[a-zA-Z\u4E00-\u9FA5]{2,}"]
         for i in range(len(reg)):
             reg[i] = re.compile(reg[i])
@@ -314,7 +314,7 @@ class Util:
                     points += 1
                 if int(sz) > 24 or int(szCs) > 24:
                     points += 1
-                print("points:",points)
+                # print("points:", points)
                 if points > 1:
                     match = True
 
@@ -570,6 +570,7 @@ class Util:
         return
 
     def print_error(self, content: str, para: xml.dom.minidom.Element):
+        print(self.getFullText(para))
         print(content)
         return
 
@@ -756,7 +757,7 @@ class Util:
         self.DetectText(IndexList, 6, text_end_index)
         self.DetectAcknowledge(IndexList[text_end_index], IndexList[text_end_index + 1])
         self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
-        # self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
+        self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
 
     def DetectCover(self, index_list: list, index_start: int, index_end: int):
         self.print_log("Detecting Paper CCover")
@@ -771,7 +772,6 @@ class Util:
         # print(StyleDict)
         if para.tagName == "w:p":
             paragraph_style = self.get_style_of_para(para)
-
         if para.tagName == "w:r":
             while not para.parentNode.tagName == "w:p":
                 para = para.parentNode
@@ -830,11 +830,10 @@ class Util:
                 if "jc" in StyleDict:
                     has_wrong = True
                     if style_class.jc != StyleDict["jc"]:
-                        self.print_error("对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc, elem)
-                if has_wrong:
-                    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：",self.getFullText(elem))
-        print("----over^^^^^^^^^^^^^^^^^^^^^^------------)")
-                # print("----over----")
+                        self.print_error("对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc,
+                                         elem)
+                # if has_wrong:
+                #     print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：", self.getFullText(elem))
 
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
         def check_student_number(para: xml.dom.minidom.Element):
@@ -1205,7 +1204,7 @@ class Util:
                 is_tab_title, tab_title_type = self.isTabTitle(self.docx_body.childNodes[index])
                 is_pic_title, pic_title_type = self.isPicTitle(self.docx_body.childNodes[index])
                 if is_title:
-                    print(title_type, self.getFullText(self.docx_body.childNodes[index]))
+                    # print(title_type, self.getFullText(self.docx_body.childNodes[index]))
                     self.checkStyle(self.docx_body.childNodes[index], title_style_dict[str(title_type)])
                 elif is_tab_title or is_pic_title:
                     self.checkStyle(self.docx_body.childNodes[index], tab_and_figure_title_style_dict)
@@ -1243,8 +1242,26 @@ class Util:
 
     def DetectReference(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Reference----------")
-        for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+
+        reference_title_style_dict = {
+            "font_b": "1",
+            "font_sz": "三号",
+            "font_eastAsia": "黑体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+            "jc": "center"
+        }
+        reference_content_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+        }
+        index = para_index_begin
+        self.checkStyle(self.docx_body.childNodes[index], reference_title_style_dict)
+        for index in range(para_index_begin + 1, para_index_end):
+            self.checkStyle(self.docx_body.childNodes[index], reference_content_style_dict)
         self.print_log("--------------------------------------------------")
 
     def DetectAppendixes(self, index_list: list, index_start: int, index_end: int):
@@ -1255,8 +1272,35 @@ class Util:
         pass
 
     def DetectAppendix(self, para_index_begin, para_index_end):
-        for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+        index = para_index_begin
+        while self.getFullText(self.docx_body.childNodes[index]).strip() == "":
+            index += 1
+        appendix_title_style_dict = {
+            "font_b": "1",
+            "font_sz": "三号",
+            "font_eastAsia": "黑体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+        }
+        appendix_content_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+        }
+        if not re.compile(r'附录\d+\s*').match(self.getFullText(self.docx_body.childNodes[index])):
+            self.print_error("附录部分匹配失败", self.docx_body.childNodes[index])
+        else:
+            self.checkStyle(self.docx_body.childNodes[index], appendix_title_style_dict)
+        index += 1
+        print("________________appendix_title____________")
+        while index < para_index_end:
+            self.checkStyle(self.docx_body.childNodes[index], appendix_content_style_dict)
+            index += 1
+
+        # for index in range(para_index_begin, para_index_end):
+        #     print(self.getFullText(self.docx_body.childNodes[index]))
         self.print_log("--------------------------------------------------")
 
     def test_method(self):
