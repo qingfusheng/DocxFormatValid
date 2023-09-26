@@ -314,6 +314,7 @@ class Util:
                     points += 1
                 if int(sz) > 24 or int(szCs) > 24:
                     points += 1
+                print("points:",points)
                 if points > 1:
                     match = True
 
@@ -325,6 +326,8 @@ class Util:
                 #     type = i
                 #     match = True
                 #     break
+            if self.isTabTitle(p) or self.isPicTitle(p):
+                match = False
 
             if p.getElementsByTagName('w:pPr'):
                 pPr = p.getElementsByTagName('w:pPr')[0]
@@ -338,7 +341,6 @@ class Util:
                         # print("matched Successfully")
                         match = True
                         type = int(ilvl) + 1
-
         return match, type
 
     @staticmethod
@@ -752,8 +754,8 @@ class Util:
                 text_end_index = i
                 break
         self.DetectText(IndexList, 6, text_end_index)
-        # self.DetectAcknowledge(IndexList[text_end_index], IndexList[text_end_index + 1])
-        # self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
+        self.DetectAcknowledge(IndexList[text_end_index], IndexList[text_end_index + 1])
+        self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
         # self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
 
     def DetectCover(self, index_list: list, index_start: int, index_end: int):
@@ -765,7 +767,7 @@ class Util:
     def checkStyle(self, para, StyleDict):
         paragraph_style = Style()
         # print("-------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------------------")
-        print(self.getFullText(para))
+        # print(self.getFullText(para))
         # print(StyleDict)
         if para.tagName == "w:p":
             paragraph_style = self.get_style_of_para(para)
@@ -776,6 +778,8 @@ class Util:
             paragraph_style = self.get_style_of_para(para.parentNode)
         for elem in para.getElementsByTagName("w:r"):
             if elem.nodeName == "w:r":
+                if self.getFullText(elem).strip() == "":
+                    continue
                 run_style = self.get_style_of_run(elem)
                 # print(self.getFullText(elem))
                 # print("para_style:", paragraph_style)
@@ -800,28 +804,36 @@ class Util:
                 # print(default_style)
                 # print(style_class)
                 # print("实际样式：", style_class, "\n规定样式：", StyleDict)
+                has_wrong = False
                 if style_class.font_b != StyleDict["font_b"]:
-                    self.print_error("粗体使用错误", elem)
+                    has_wrong = True
+                    self.print_error("请检查粗体是否使用正确", elem)
                 # if style_class.font_bCs != "1":
                 #     self.print_error("请使用粗体", elem)
                 if style_class.font_sz != get_pound_of_font_sz(StyleDict["font_sz"]):
+                    has_wrong = True
                     self.print_error("字体大小错误，应当为" + StyleDict["font_sz"] + "，而实际上是" + style_class.font_sz,
                                      elem)
                 if style_class.font_eastAsia != StyleDict["font_eastAsia"]:
+                    has_wrong = True
                     self.print_error("中文字体使用错误，应为" + StyleDict[
                         "font_eastAsia"] + "，而实际上是" + style_class.font_eastAsia, elem)
                 if StyleDict["font_ascii"] != "":
                     if style_class.font_ascii not in [StyleDict["font_ascii"], ""]:
+                        has_wrong = True
                         self.print_error(
                             "英文字体使用错误，应为" + StyleDict["font_ascii"] + "，而实际上是" + style_class.font_ascii,
                             elem)
                 if style_class.font_color not in ["", "000000", "auto"]:
+                    has_wrong = True
                     self.print_error("颜色使用错误，应为" + "黑色", elem)
                 if "jc" in StyleDict:
+                    has_wrong = True
                     if style_class.jc != StyleDict["jc"]:
-                        self.print_error(
-                            "对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc,
-                            elem)
+                        self.print_error("对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc, elem)
+                if has_wrong:
+                    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：",self.getFullText(elem))
+        print("----over^^^^^^^^^^^^^^^^^^^^^^------------)")
                 # print("----over----")
 
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
@@ -910,7 +922,13 @@ class Util:
             raise Exception("论文英文标题匹配错误")
         for index in range(para_index_begin, para_index_end):
             if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") != "":
-                item_para_list.append(index)
+                if self.docx_body.childNodes[index].nodeName == "w:p":
+                    item_para_list.append(self.docx_body.childNodes[index])
+                else:
+                    for each_para in self.docx_body.childNodes[index].getElementsByTagName("w:p"):
+                        if self.getFullText(each_para).strip() != "":
+                            item_para_list.append(each_para)
+        print(len(item_para_list))
         self.print_log("---!----")
         StyleDictOfEnglishType = {
             "font_b": "1",
@@ -919,7 +937,7 @@ class Util:
             "font_ascii": "Times New Roman",
             "font_color": "000000"
         }
-        self.checkStyle(self.docx_body.childNodes[item_para_list[0]], StyleDictOfEnglishType)
+        self.checkStyle(item_para_list[0], StyleDictOfEnglishType)
         StyleDictOfEnglishTitle = {
             "font_b": "1",
             "font_sz": "小二",
@@ -927,7 +945,7 @@ class Util:
             "font_ascii": "Times New Roman",
             "font_color": "000000"
         }
-        self.checkStyle(self.docx_body.childNodes[item_para_list[1]], StyleDictOfEnglishTitle)
+        self.checkStyle(item_para_list[1], StyleDictOfEnglishTitle)
         StyleDictOfEnglishWriterInfo = {
             "font_b": "1",
             "font_sz": "小三",
@@ -936,7 +954,7 @@ class Util:
             "font_color": "000000"
         }
         for index in range(2, 5):
-            self.checkStyle(self.docx_body.childNodes[item_para_list[index]], StyleDictOfEnglishWriterInfo)
+            self.checkStyle(item_para_list[index], StyleDictOfEnglishWriterInfo)
         StyleDictOfEnglishSchoolInfo = {
             "font_b": "1",
             "font_sz": "小三",
@@ -945,7 +963,7 @@ class Util:
             "font_color": "000000"
         }
         for index in range(5, 8):
-            self.checkStyle(self.docx_body.childNodes[item_para_list[index]], StyleDictOfEnglishSchoolInfo)
+            self.checkStyle(item_para_list[index], StyleDictOfEnglishSchoolInfo)
         self.print_log("--------------------------------------------------")
 
     def DetectCopyright(self, para_index_begin, para_index_end):
@@ -1198,8 +1216,29 @@ class Util:
 
     def DetectAcknowledge(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Acknowledge----------")
-        for index in range(para_index_begin, para_index_end):
-            print(self.getFullText(self.docx_body.childNodes[index]))
+        index = para_index_begin
+        if self.getFullText(self.docx_body.childNodes[index]).strip() != "致  谢":
+            self.print_error("致谢二字中间应该留两个空格", self.docx_body.childNodes[index])
+        acknowledge_title_style_dict = {
+            "font_b": "1",
+            "font_sz": "三号",
+            "font_eastAsia": "黑体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+            "jc": "center"
+        }
+        self.checkStyle(self.docx_body.childNodes[index], acknowledge_title_style_dict)
+        index += 1
+        acknowledge_content_style_dict = {
+            "font_b": "0",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+        }
+        while index <= para_index_end - 1:
+            self.checkStyle(self.docx_body.childNodes[index], acknowledge_content_style_dict)
+            index += 1
         self.print_log("--------------------------------------------------")
 
     def DetectReference(self, para_index_begin, para_index_end):
