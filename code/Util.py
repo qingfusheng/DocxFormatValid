@@ -1,8 +1,11 @@
+import datetime
 import json
 import xml.dom.minidom
 import zipfile
 import os
 import re
+from typing import List
+
 from lxml import etree
 import sys
 from xml.dom import minidom
@@ -104,6 +107,7 @@ class Util:
         self.style_dict = None
         self.docx_dir = os.path.join(project_dir, "code", "./DocxFilter")
         self.workflow_dir = os.path.join(project_dir, "code", "./WorkFlowFilter")
+        self.code_dir = os.path.join(project_dir, "code")
         if not os.path.exists(self.docx_dir):
             os.mkdir(self.docx_dir)
         if not os.path.exists(self.workflow_dir):
@@ -114,19 +118,21 @@ class Util:
         self.error_log_text = ""
 
         self.unzip()
-        self.doc: xml.dom.minidom.Element = minidom.parse(
+        self.doc: xml.dom.minidom.Document = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'document.xml'))
         self.docx_body: xml.dom.minidom.Element = self.doc.childNodes[0].childNodes[0]
-        self.styles: xml.dom.minidom.Element = minidom.parse(
+        self.styles: xml.dom.minidom.Document = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'styles.xml'))
-        self.themes: xml.dom.minidom.Element = minidom.parse(
+        self.themes: xml.dom.minidom.Document = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'theme', 'theme1.xml'))
-        self.numbering: xml.dom.minidom.Element = minidom.parse(
+        self.numbering: xml.dom.minidom.Document = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) if os.path.exists(
-            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) else minidom.Document()
-        self.comments: xml.dom.minidom.Element = minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'numbering.xml')) else minidom.parse(
+            os.path.join(self.code_dir, "BaseXml", "numbering.xml"))
+        self.comments: xml.dom.minidom.Document = minidom.parse(
             os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) if os.path.exists(
-            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) else minidom.Document()
+            os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml')) else minidom.parse(
+            os.path.join(self.code_dir, "BaseXml", "comments.xml"))
         self.create_style_xml_index_by_styleId()
         self.create_comment_xml_index_by_commentId()
         # print("comment_dict:", self.style_dict)
@@ -137,6 +143,16 @@ class Util:
         f.extractall(os.path.join(self.workflow_dir, self.docx_filename))  # 提取要修改的docx文件里的所有文件到workfolder文件夹
         f.close()
         return
+
+    def saveAs(self, output_path):
+        with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word","document.xml"), mode="w", encoding="utf-8") as f:
+            self.doc.writexml(f)
+        newf = zipfile.ZipFile(output_path, 'w')  # 创建一个新的docx文件，作为修改后的docx
+        for path, dirnames, filenames in os.walk(os.path.join(self.workflow_dir, self.docx_filename)):  # 将workfolder文件夹所有的文件压缩至new.docx
+            # 去掉目标跟路径，只对目标文件夹下边的文件及文件夹进行压缩
+            fpath = path.replace(os.path.join(self.workflow_dir, self.docx_filename), '')
+            for filename in filenames:
+                newf.write(os.path.join(path, filename), os.path.join(fpath, filename))
 
     @staticmethod
     def create_empty_dom(self):
@@ -574,6 +590,77 @@ class Util:
         print(content)
         return
 
+    def mark_error_of_run_list(self, commentId: str, para: xml.dom.minidom.Element, run_index_list: List[int]):
+        mark_color = "FFD400"
+        for each in run_index_list:
+            run_elem: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[each]
+            rPr: xml.dom.minidom.Element
+            if run_elem.getElementsByTagName("w:rPr"):
+                rPr: xml.dom.minidom.Element = run_elem.getElementsByTagName("w:rPr")[0]
+                if rPr.getElementsByTagName("w:color"):
+                    rPr.getElementsByTagName("w:color")[0].setAttribute("w:val", mark_color)
+                else:
+                    font_color = self.doc.createElement("w:color")
+                    font_color.setAttribute("w:val", mark_color)
+                    rPr.appendChild(font_color)
+            else:
+                rPr: xml.dom.minidom.Element = self.doc.createElement("w:rPr")
+                font_color = self.doc.createElement("w:color")
+                font_color.setAttribute("w:val", mark_color)
+                rPr.appendChild(font_color)
+                run_elem.appendChild(rPr)
+        first_run_item: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[run_index_list[0]]
+        while first_run_item.parentNode.nodeName != "w:p":
+            first_run_item = first_run_item.parentNode
+        last_run_item: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[run_index_list[-1]]
+        while last_run_item.parentNode.nodeName != "w:p":
+            last_run_item = last_run_item.parentNode
+        commentRangeStart: xml.dom.minidom.Element = self.doc.createElement("w:commentRangeStart")
+        commentRangeStart.setAttribute("w:id", commentId)
+        commentRangeEnd: xml.dom.minidom.Element = self.doc.createElement("w:commentRangeEnd")
+        commentRangeEnd.setAttribute("w:id", commentId)
+        commentReference: xml.dom.minidom.Element = self.doc.createElement("w:commentReference")
+        commentReference.setAttribute("w:id", commentId)
+        run_of_com_ref: xml.dom.minidom.Element = self.doc.createElement("w:r")
+        run_of_com_ref.appendChild(commentReference)
+        para.insertBefore(commentRangeStart, first_run_item)
+        para.insertBefore(commentRangeEnd, last_run_item.nextSibling)
+        para.insertBefore(run_of_com_ref, commentRangeEnd)
+        return
+
+    def create_comment(self, comment_content: str):
+        comment_id = 0
+        for each_comment_id in list(self.comment_dict.keys()):
+            if each_comment_id.isdigit():
+                comment_id = max(int(each_comment_id), comment_id) + 1
+        comment_id = str(comment_id)
+        # comment_ids = [int(each) for each in self.comment_dict.keys()]
+        # comment_id = str(max(list(comment_ids), default=0) + 1)
+        comment: xml.dom.minidom.Element = self.comments.createElement("w:comment")
+        comment.setAttribute("w:author", "自动标注程序")
+        comment.setAttribute("w:date", datetime.datetime.now().isoformat())
+        comment.setAttribute("w:id", str(comment_id))
+        para_node = self.comments.createElement("w:p")
+        pPr_node = self.comments.createElement("w:pPr")
+        rPr_node = self.comments.createElement("w:rPr")
+        font_property = self.comments.createElement("w:rFonts")
+        font_property.setAttribute("w:hint", "eastAsia")
+        rPr_node.appendChild(font_property)
+        pPr_node.appendChild(rPr_node)
+        run_node = self.comments.createElement("w:r")
+        t_node = self.comments.createElement("w:t")
+        t_node.appendChild(self.comments.createTextNode(comment_content))
+        run_node.appendChild(t_node)
+        para_node.appendChild(pPr_node)
+        para_node.appendChild(run_node)
+        comment.appendChild(para_node)
+        self.comment_dict[comment_id] = comment
+        self.comments.firstChild.appendChild(comment)
+        with open(file=os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml'), mode="w",
+                  encoding="utf-8") as f:
+            self.comments.writexml(f)
+        return comment_id
+
     def get_style_from_styleId(self, style_id: str):
         # print("getting style from styleId:", style_id)
         style: xml.dom.minidom.Element = self.style_dict[style_id]
@@ -596,7 +683,6 @@ class Util:
                 format_style.font_b = "1"
             if run_property.getElementsByTagName("w:bCs"):
                 format_style.font_bCs = "1"
-
             if run_property.getElementsByTagName("w:i"):
                 format_style.font_i = "1"
             if run_property.getElementsByTagName("w:u"):
@@ -759,6 +845,8 @@ class Util:
         self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
         self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
 
+        self.saveAs(os.path.join(self.code_dir, "OutputDocxFilter", self.docx_filename))
+
     def DetectCover(self, index_list: list, index_start: int, index_end: int):
         self.print_log("Detecting Paper CCover")
         self.DetectChineseCover(index_list[index_start], index_list[index_start + 1])
@@ -776,7 +864,20 @@ class Util:
             while not para.parentNode.tagName == "w:p":
                 para = para.parentNode
             paragraph_style = self.get_style_of_para(para.parentNode)
-        for elem in para.getElementsByTagName("w:r"):
+
+        b_list, sz_list, eastAsia_list, ascii_list, color_list, jc_list = [], [], [], [], [], []
+        # b_wrong: bool = False
+        # font_sz_wrong: bool = False
+        # font_eastAsia_wrong: bool = False
+        # font_ascii_wrong: bool = False
+        # font_color_wrong: bool = False
+        # jc_wrong: bool = False
+        chinese_style_name_list = ["粗体：", "字体大小：", "中文字体：", "英文字体：", "字体颜色：", "是否对齐："]
+        pre_style_list = [False, False, False, False, False, False]
+        cur_style_list = [False, False, False, False, False, False]
+        para_index_list = [[], [], [], [], [], []]
+        for elem_index in range(len(para.getElementsByTagName("w:r"))):
+            elem = para.getElementsByTagName("w:r")[elem_index]
             if elem.nodeName == "w:r":
                 if self.getFullText(elem).strip() == "":
                     continue
@@ -799,41 +900,64 @@ class Util:
                         # print(style_attr)
                     # print(style_name, style_attr)
                     setattr(style_class, style_name, style_attr)
-                # print(paragraph_style)
-                # print(run_style)
-                # print(default_style)
-                # print(style_class)
-                # print("实际样式：", style_class, "\n规定样式：", StyleDict)
-                has_wrong = False
+
+                # try:
+                #     pre_b, pre_sz, pre_eastAsia, pre_ascii, pre_color, pre_jc = b_wrong, font_sz_wrong, font_eastAsia_wrong, font_ascii_wrong, font_color_wrong, jc_wrong
+                # except NameError as error:
+                #     pre_b, pre_sz, pre_eastAsia, pre_ascii, pre_color, pre_jc = False, False, False, False, False, False
+                # b_wrong, font_sz_wrong, font_eastAsia_wrong, font_ascii_wrong, font_color_wrong, jc_wrong = False, False, False, False, False, False
+                for i in range(6):
+                    pre_style_list[i] = cur_style_list[i]
+
+                for i in range(6):
+                    cur_style_list[i] = False
+
                 if style_class.font_b != StyleDict["font_b"]:
-                    has_wrong = True
+                    cur_style_list[0] = True
                     self.print_error("请检查粗体是否使用正确", elem)
                 # if style_class.font_bCs != "1":
                 #     self.print_error("请使用粗体", elem)
                 if style_class.font_sz != get_pound_of_font_sz(StyleDict["font_sz"]):
-                    has_wrong = True
+                    cur_style_list[1] = True
                     self.print_error("字体大小错误，应当为" + StyleDict["font_sz"] + "，而实际上是" + style_class.font_sz,
                                      elem)
                 if style_class.font_eastAsia != StyleDict["font_eastAsia"]:
-                    has_wrong = True
+                    cur_style_list[2] = True
                     self.print_error("中文字体使用错误，应为" + StyleDict[
                         "font_eastAsia"] + "，而实际上是" + style_class.font_eastAsia, elem)
                 if StyleDict["font_ascii"] != "":
                     if style_class.font_ascii not in [StyleDict["font_ascii"], ""]:
-                        has_wrong = True
+                        cur_style_list[3] = True
                         self.print_error(
                             "英文字体使用错误，应为" + StyleDict["font_ascii"] + "，而实际上是" + style_class.font_ascii,
                             elem)
-                if style_class.font_color not in ["", "000000", "auto"]:
-                    has_wrong = True
-                    self.print_error("颜色使用错误，应为" + "黑色", elem)
+                if "font_color" in StyleDict:
+                    if style_class.font_color not in ["", "000000", "auto"]:
+                        cur_style_list[4] = True
+                        self.print_error("颜色使用错误，应为" + "黑色" + "，而实际上是" + style_class.font_color, elem)
                 if "jc" in StyleDict:
-                    has_wrong = True
                     if style_class.jc != StyleDict["jc"]:
+                        cur_style_list[5] = True
                         self.print_error("对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc,
                                          elem)
-                # if has_wrong:
-                #     print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：", self.getFullText(elem))
+                for i in range(6):
+                    if cur_style_list[i]:
+                        if pre_style_list[i]:
+                            para_index_list[i][-1].append(elem_index)
+                        else:
+                            para_index_list[i].append([elem_index])
+        print("--------------start---------------")
+        error_text_list = ["粗体使用错误", "字体大小错误", "中文字体错误", "英文字体错误", "字体颜色错误", "段落对齐错误"]
+        styleIdList = []
+        for index in range(len(error_text_list)):
+            styleIdList.append(error_text_list[index])
+        for i in range(6):
+            for each_index in para_index_list[i]:
+                self.mark_error_of_run_list(styleIdList[i], para, each_index)
+            print(chinese_style_name_list[i], para_index_list[i])
+        print("--------------end---------------")
+        # if has_wrong:
+        #     print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：", self.getFullText(elem))
 
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
         def check_student_number(para: xml.dom.minidom.Element):
@@ -1121,21 +1245,18 @@ class Util:
             "font_sz": "三号",
             "font_eastAsia": "黑体",
             "font_ascii": "Times New Roman",
-            "font_color": "000000"
         }
         level1_style_dict = {
             "font_b": "1",
             "font_sz": "四号",
             "font_eastAsia": "黑体",
             "font_ascii": "Times New Roman",
-            "font_color": "000000"
         }
         level2_style_dict = {
             "font_b": "0",
             "font_sz": "四号",
             "font_eastAsia": "宋体",
             "font_ascii": "Times New Roman",
-            "font_color": "000000"
         }
         for index in range(para_index_begin, para_index_end):
             print("------------------------------------------------------------------------")
@@ -1289,7 +1410,7 @@ class Util:
             "font_ascii": "Times New Roman",
             "font_color": "000000",
         }
-        if not re.compile(r'附录\d+\s*').match(self.getFullText(self.docx_body.childNodes[index])):
+        if not re.compile(r'^附录(\d+\s*)?').match(self.getFullText(self.docx_body.childNodes[index])):
             self.print_error("附录部分匹配失败", self.docx_body.childNodes[index])
         else:
             self.checkStyle(self.docx_body.childNodes[index], appendix_title_style_dict)
@@ -1305,6 +1426,9 @@ class Util:
 
     def test_method(self):
         self.DetectPaper()
+        # temp_string = ["bei", "jing", "huan", "ying", "ni"]
+        # for each in temp_string:
+        #     self.create_comment(each)
         # document = self.doc.childNodes[0]
         # body = document.childNodes[0]
         # for each in body.childNodes:
