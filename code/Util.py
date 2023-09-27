@@ -149,6 +149,45 @@ class Util:
         f.close()
         return
 
+    def set_docx_rel(self):
+        def create_rel_xml(temp_rel_xml, Type, Target, Id):
+            comment_rel: xml.dom.minidom.Element = temp_rel_xml.createElement("Relationship")
+            comment_rel.setAttribute("Type",
+                                     Type)
+            comment_rel.setAttribute("Target", "comments.xml")
+            comment_rel.setAttribute("Id", commentsId)
+            return comment_rel
+        # rel_xml: xml.dom.minidom.Document = xml.dom.minidom.parse(
+        #     os.path.join(self.code_dir, "BaseXml", "document.xml.rels"))
+        rel_xml: xml.dom.minidom.Document = xml.dom.minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, "word", "_rels", "document.xml.rels"))
+        w_ids = []
+        for elem in rel_xml.childNodes[0].getElementsByTagName("Relationship"):
+            elem: xml.dom.minidom.Element
+            w_ids.append(elem.getAttribute("Id"))
+            """
+            <Relationship Id="rId4"
+        Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable"
+        Target="fontTable.xml" />
+            """
+        info_list = [["http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments","comments.xml"],
+                     ["http://schemas.microsoft.com/office/2016/09/relationships/commentsIds","commentsIds.xml"],
+                     ["http://schemas.microsoft.com/office/2011/relationships/commentsExtended","commentsExtended.xml"],
+                     ["",""]]
+        for each in info_list:
+            commentsId = "rId" + str(max([int(each.replace("rId", "")) for each in w_ids]) + 1)
+            w_ids.append(commentsId)
+            comment_rel = create_rel_xml(rel_xml, each[0], each[1], commentsId)
+            rel_xml.childNodes[0].appendChild(comment_rel)
+
+        with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word", "_rels", "document.xml.rels"),
+                  mode="w", encoding="utf-8") as f:
+            rel_xml.writexml(f)
+        ContentTypesXml: xml.dom.minidom.Document = xml.dom.minidom.parse(
+            os.path.join(self.code_dir, "BaseXml", "[Content_Types].xml"))
+        with open(os.path.join(self.workflow_dir, self.docx_filename, "[Content_Types].xml"), mode="w",
+                  encoding="utf-8") as f:
+            ContentTypesXml.writexml(f)
+
     def saveAs(self, output_path):
         with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word", "document.xml"), mode="w",
                   encoding="utf-8") as f:
@@ -156,13 +195,15 @@ class Util:
         with open(file=os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml'), mode="w",
                   encoding="utf-8") as f:
             self.comments.writexml(f)
-        newf = zipfile.ZipFile(output_path, 'w')  # 创建一个新的docx文件，作为修改后的docx
+        self.set_docx_rel()
+        newf = zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED)  # 创建一个新的docx文件，作为修改后的docx
         for path, dirnames, filenames in os.walk(
                 os.path.join(self.workflow_dir, self.docx_filename)):  # 将workfolder文件夹所有的文件压缩至new.docx
             # 去掉目标跟路径，只对目标文件夹下边的文件及文件夹进行压缩
             fpath = path.replace(os.path.join(self.workflow_dir, self.docx_filename), '')
             for filename in filenames:
                 newf.write(os.path.join(path, filename), os.path.join(fpath, filename))
+        newf.close()
 
     @staticmethod
     def create_empty_dom(self):
@@ -874,7 +915,7 @@ class Util:
         pass
 
     def checkStyle(self, para, StyleDict):
-        begin_time = time.time()
+        # begin_time = time.time()
         paragraph_style = Style()
         # print("-------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------------------")
         # print(self.getFullText(para))
@@ -981,9 +1022,9 @@ class Util:
         # print("--------------end---------------")
         # if has_wrong:
         #     print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：", self.getFullText(elem))
-        end_time = time.time()
-        time_delay = end_time - begin_time
-        print("程序时间：", time_delay)
+        # end_time = time.time()
+        # time_delay = end_time - begin_time
+        # print("程序时间：", time_delay)
 
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
         def check_student_number(para: xml.dom.minidom.Element):
