@@ -1,5 +1,7 @@
 import datetime
 import json
+import shutil
+import time
 import xml.dom.minidom
 import zipfile
 import os
@@ -138,6 +140,9 @@ class Util:
         # print("comment_dict:", self.style_dict)
         return
 
+    def __del__(self):
+        shutil.rmtree(os.path.join(self.workflow_dir, self.docx_filename))
+
     def unzip(self):
         f = zipfile.ZipFile(os.path.join(self.docx_dir, self.docx_filename))  # 打开需要修改的docx文件
         f.extractall(os.path.join(self.workflow_dir, self.docx_filename))  # 提取要修改的docx文件里的所有文件到workfolder文件夹
@@ -145,10 +150,15 @@ class Util:
         return
 
     def saveAs(self, output_path):
-        with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word","document.xml"), mode="w", encoding="utf-8") as f:
+        with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word", "document.xml"), mode="w",
+                  encoding="utf-8") as f:
             self.doc.writexml(f)
+        with open(file=os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml'), mode="w",
+                  encoding="utf-8") as f:
+            self.comments.writexml(f)
         newf = zipfile.ZipFile(output_path, 'w')  # 创建一个新的docx文件，作为修改后的docx
-        for path, dirnames, filenames in os.walk(os.path.join(self.workflow_dir, self.docx_filename)):  # 将workfolder文件夹所有的文件压缩至new.docx
+        for path, dirnames, filenames in os.walk(
+                os.path.join(self.workflow_dir, self.docx_filename)):  # 将workfolder文件夹所有的文件压缩至new.docx
             # 去掉目标跟路径，只对目标文件夹下边的文件及文件夹进行压缩
             fpath = path.replace(os.path.join(self.workflow_dir, self.docx_filename), '')
             for filename in filenames:
@@ -590,8 +600,10 @@ class Util:
         print(content)
         return
 
-    def mark_error_of_run_list(self, commentId: str, para: xml.dom.minidom.Element, run_index_list: List[int]):
+    def mark_error_of_run_list(self, commentContent: str, para: xml.dom.minidom.Element, run_index_list: List[int]):
         mark_color = "FFD400"
+        if para.tagName != "w:p":
+            para = para.getElementsByTagName("w:p")[0]
         for each in run_index_list:
             run_elem: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[each]
             rPr: xml.dom.minidom.Element
@@ -610,56 +622,64 @@ class Util:
                 rPr.appendChild(font_color)
                 run_elem.appendChild(rPr)
         first_run_item: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[run_index_list[0]]
+
         while first_run_item.parentNode.nodeName != "w:p":
             first_run_item = first_run_item.parentNode
+
+        print("ParentPara:", first_run_item.parentNode.toxml())
+        print("ReservedPara:", para.toxml())
+
         last_run_item: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[run_index_list[-1]]
         while last_run_item.parentNode.nodeName != "w:p":
             last_run_item = last_run_item.parentNode
+
+        commentId = self.create_comment(commentContent)
+
         commentRangeStart: xml.dom.minidom.Element = self.doc.createElement("w:commentRangeStart")
         commentRangeStart.setAttribute("w:id", commentId)
         commentRangeEnd: xml.dom.minidom.Element = self.doc.createElement("w:commentRangeEnd")
         commentRangeEnd.setAttribute("w:id", commentId)
         commentReference: xml.dom.minidom.Element = self.doc.createElement("w:commentReference")
         commentReference.setAttribute("w:id", commentId)
+
         run_of_com_ref: xml.dom.minidom.Element = self.doc.createElement("w:r")
         run_of_com_ref.appendChild(commentReference)
+
         para.insertBefore(commentRangeStart, first_run_item)
         para.insertBefore(commentRangeEnd, last_run_item.nextSibling)
-        para.insertBefore(run_of_com_ref, commentRangeEnd)
+        para.insertBefore(run_of_com_ref, commentRangeEnd.nextSibling)
         return
 
     def create_comment(self, comment_content: str):
-        comment_id = 0
+        comment_id = 1
         for each_comment_id in list(self.comment_dict.keys()):
             if each_comment_id.isdigit():
                 comment_id = max(int(each_comment_id), comment_id) + 1
-        comment_id = str(comment_id)
         # comment_ids = [int(each) for each in self.comment_dict.keys()]
         # comment_id = str(max(list(comment_ids), default=0) + 1)
+
         comment: xml.dom.minidom.Element = self.comments.createElement("w:comment")
+        comment.setAttribute("w:id", str(comment_id))
         comment.setAttribute("w:author", "自动标注程序")
         comment.setAttribute("w:date", datetime.datetime.now().isoformat())
-        comment.setAttribute("w:id", str(comment_id))
+
         para_node = self.comments.createElement("w:p")
-        pPr_node = self.comments.createElement("w:pPr")
-        rPr_node = self.comments.createElement("w:rPr")
-        font_property = self.comments.createElement("w:rFonts")
-        font_property.setAttribute("w:hint", "eastAsia")
-        rPr_node.appendChild(font_property)
-        pPr_node.appendChild(rPr_node)
+        # pPr_node = self.comments.createElement("w:pPr")
+        # rPr_node = self.comments.createElement("w:rPr")
+        # font_property = self.comments.createElement("w:rFonts")
+        # font_property.setAttribute("w:hint", "eastAsia")
+        # rPr_node.appendChild(font_property)
+        # pPr_node.appendChild(rPr_node)
         run_node = self.comments.createElement("w:r")
         t_node = self.comments.createElement("w:t")
         t_node.appendChild(self.comments.createTextNode(comment_content))
         run_node.appendChild(t_node)
-        para_node.appendChild(pPr_node)
+        # para_node.appendChild(pPr_node)
         para_node.appendChild(run_node)
         comment.appendChild(para_node)
-        self.comment_dict[comment_id] = comment
+        self.comment_dict[str(comment_id)] = comment
         self.comments.firstChild.appendChild(comment)
-        with open(file=os.path.join(self.workflow_dir, self.docx_filename, 'word', 'comments.xml'), mode="w",
-                  encoding="utf-8") as f:
-            self.comments.writexml(f)
-        return comment_id
+        return str(comment_id)
 
     def get_style_from_styleId(self, style_id: str):
         # print("getting style from styleId:", style_id)
@@ -854,6 +874,7 @@ class Util:
         pass
 
     def checkStyle(self, para, StyleDict):
+        begin_time = time.time()
         paragraph_style = Style()
         # print("-------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------------------")
         # print(self.getFullText(para))
@@ -872,7 +893,7 @@ class Util:
         # font_ascii_wrong: bool = False
         # font_color_wrong: bool = False
         # jc_wrong: bool = False
-        chinese_style_name_list = ["粗体：", "字体大小：", "中文字体：", "英文字体：", "字体颜色：", "是否对齐："]
+        # chinese_style_name_list = ["粗体：", "字体大小：", "中文字体：", "英文字体：", "字体颜色：", "是否对齐："]
         pre_style_list = [False, False, False, False, False, False]
         cur_style_list = [False, False, False, False, False, False]
         para_index_list = [[], [], [], [], [], []]
@@ -946,18 +967,23 @@ class Util:
                             para_index_list[i][-1].append(elem_index)
                         else:
                             para_index_list[i].append([elem_index])
-        print("--------------start---------------")
-        error_text_list = ["粗体使用错误", "字体大小错误", "中文字体错误", "英文字体错误", "字体颜色错误", "段落对齐错误"]
-        styleIdList = []
-        for index in range(len(error_text_list)):
-            styleIdList.append(error_text_list[index])
+        # print("--------------start---------------")
+        error_text_list = ["粗体使用错误", "字体大小错误", "中文字体错误", "英文字体错误", "字体颜色错误",
+                           "段落对齐错误"]
+        # styleIdList = []
+        # for index in range(len(error_text_list)):
+        #     comment = self.create_comment(error_text_list[index])
+        #     styleIdList.append(comment)
         for i in range(6):
             for each_index in para_index_list[i]:
-                self.mark_error_of_run_list(styleIdList[i], para, each_index)
-            print(chinese_style_name_list[i], para_index_list[i])
-        print("--------------end---------------")
+                self.mark_error_of_run_list(error_text_list[i], para, each_index)
+            # print(chinese_style_name_list[i], para_index_list[i])
+        # print("--------------end---------------")
         # if has_wrong:
         #     print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：", self.getFullText(elem))
+        end_time = time.time()
+        time_delay = end_time - begin_time
+        print("程序时间：", time_delay)
 
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
         def check_student_number(para: xml.dom.minidom.Element):
