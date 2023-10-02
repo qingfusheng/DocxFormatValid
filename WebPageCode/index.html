@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Convert .docx to .pdf</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        #app {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        p {
+            margin: 5px 0;
+        }
+
+        a {
+            display: block;
+            margin-top: 10px;
+        }
+
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Paper Detect</h1>
+        <input type="file" @change="onFileChange">
+        <button @click="convertToPdf" :disabled="isConverting">
+            Detect
+        </button>
+        <p v-if="isConverting">Detecting...</p>
+        <p v-if="pdfData">Conversion successful!</p>
+        <a v-if="pdfData" :href="pdfUrl" download="output.docx">Download DOCX</a>
+        <p v-if="error" class="error">{{ error }}</p>
+    </div>
+
+    <!-- <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script> -->
+    <script src="./js/vue.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                file: null,
+                isConverting: false,
+                pdfData: null,
+                pdfUrl: null,
+                error: null
+            },
+            methods: {
+                onFileChange(event) {
+                    this.file = event.target.files[0];
+                },
+                convertToPdf() {
+                    if (!this.file) {
+                        alert("Please select a .docx file.");
+                        return;
+                    }
+
+                    this.isConverting = true;
+                    this.pdfData = null;
+                    this.pdfUrl = null;
+                    this.error = null;
+
+                    const formData = new FormData();
+                    formData.append("file", this.file);
+
+                    fetch("http://localhost:5000/upload/", {
+                        method: "POST",
+                        body: formData
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Conversion failed. Status code: ${response.status}`);
+                        }
+                        return response.blob();
+                    })
+                    .then(pdfBlob => {
+                        this.isConverting = false;
+                        this.pdfData = pdfBlob;
+                        this.pdfUrl = URL.createObjectURL(pdfBlob);
+                    })
+                    .catch(error => {
+                        this.isConverting = false;
+                        this.error = error.message;
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
