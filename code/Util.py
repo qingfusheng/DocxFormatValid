@@ -847,7 +847,7 @@ class Util:
         title_list = ["独创性声明", "摘要", "Abstract", "目录", "绪论", "致谢", "参考文献",
                       "附录1  攻读硕士学位期间取得的学术成果", "附录2  其它附录"]
         if not self.doc.getElementsByTagName("w:sdt"):
-            print("输入DOCX文档没有目录，请添加目录后重试1")
+            self.print_log("输入DOCX文档没有目录，请添加目录后重试1")
         for index in range(len(docx_body_childs)):
             paragraph_node: xml.dom.minidom.Element
             paragraph_node = docx_body_childs[index]
@@ -857,11 +857,12 @@ class Util:
                         if IndexList[-1] != index:
                             insert_index(index)
                     else:
-                        print("输入DOCX文档没有目录，请添加目录后重试2")
+                        self.print_log("输入DOCX文档没有目录，请添加目录后重试2")
                         # exit()
                 continue
             if paragraph_node.nodeName != "w:p":
                 # 前面已经排除了是目录的情况
+                # w:bookmarkStart, w:bookmarkEnd
                 continue
 
             """判断分页符"""
@@ -1105,7 +1106,7 @@ class Util:
             # print(self.docx_body.childNodes[index].tagName)
             # print(self.getFullText(self.docx_body.childNodes[index]), end="\n\n")
 
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectEnglishCover(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper English Cover----------")
@@ -1245,7 +1246,7 @@ class Util:
                 self.checkStyle(self.docx_body.childNodes[index], title_style_dict)
             else:
                 self.checkStyle(self.docx_body.childNodes[index], text_style_dict)
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectAbstract(self, index_list, index_start, index_end):
         self.DetectChineseAbstract(index_list[index_start], index_list[index_start + 1])
@@ -1311,7 +1312,7 @@ class Util:
                         bold_key_word = False
                 else:
                     self.checkStyle(elem, keyword_style_dict)
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectEnglishAbstract(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper English Abstract----------")
@@ -1364,7 +1365,7 @@ class Util:
                         bold_key_word = False
                 else:
                     self.checkStyle(elem, keyword_style_dict)
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectCatalogue(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Catalogue----------")
@@ -1390,7 +1391,7 @@ class Util:
             "font_ascii": "Times New Roman",
         }
         for index in range(para_index_begin, para_index_end):
-            self.print_log("------------------------------------------------------------------------")
+            # self.print_log("------------------------------------------------------------------------")
             if level2_reg.match(self.getFullText(self.docx_body.childNodes[index]).replace(" ", "").strip()):
                 # print("2--------------------", self.getFullText(self.docx_body.childNodes[index]))
                 self.checkStyle(self.docx_body.childNodes[index], level2_style_dict)
@@ -1403,7 +1404,7 @@ class Util:
                 # print("0--------------------", self.getFullText(self.docx_body.childNodes[index]))
                 self.checkStyle(self.docx_body.childNodes[index], level0_style_dict)
                 continue
-        self.print_log("--------------------------------------------------")
+        # self.print_log("--------------------------------------------------")
         pass
 
     def DetectText(self, index_list: list, index_start: int, index_end: int):
@@ -1462,7 +1463,7 @@ class Util:
                 else:
                     self.checkStyle(self.docx_body.childNodes[index], content_style_dict)
 
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectAcknowledge(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Acknowledge----------")
@@ -1489,7 +1490,7 @@ class Util:
         while index <= para_index_end - 1:
             self.checkStyle(self.docx_body.childNodes[index], acknowledge_content_style_dict)
             index += 1
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectReference(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Reference----------")
@@ -1513,7 +1514,7 @@ class Util:
         self.checkStyle(self.docx_body.childNodes[index], reference_title_style_dict)
         for index in range(para_index_begin + 1, para_index_end):
             self.checkStyle(self.docx_body.childNodes[index], reference_content_style_dict)
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def DetectAppendixes(self, index_list: list, index_start: int, index_end: int):
         self.print_log("----------Detecting Paper Appendixes----------")
@@ -1549,7 +1550,7 @@ class Util:
         while index < para_index_end:
             self.checkStyle(self.docx_body.childNodes[index], appendix_content_style_dict)
             index += 1
-        self.print_log("--------------------------------------------------")
+        self.print_log("--------------------over--------------------")
 
     def test_method(self):
         self.DetectPaper()
