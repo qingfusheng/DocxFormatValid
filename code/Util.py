@@ -144,7 +144,8 @@ class Util:
 
     def __del__(self):
         # remove related WorkFlowFilter subFilter
-        shutil.rmtree(os.path.join(self.workflow_dir, self.docx_filename))
+        if os.path.exists(os.path.join(self.workflow_dir, self.docx_filename)):
+            shutil.rmtree(os.path.join(self.workflow_dir, self.docx_filename))
         return
 
     def unzip(self):
@@ -161,9 +162,11 @@ class Util:
             comment_rel.setAttribute("Target", "comments.xml")
             comment_rel.setAttribute("Id", commentsId)
             return comment_rel
+
         # rel_xml: xml.dom.minidom.Document = xml.dom.minidom.parse(
         #     os.path.join(self.code_dir, "BaseXml", "document.xml.rels"))
-        rel_xml: xml.dom.minidom.Document = xml.dom.minidom.parse(os.path.join(self.workflow_dir, self.docx_filename, "word", "_rels", "document.xml.rels"))
+        rel_xml: xml.dom.minidom.Document = xml.dom.minidom.parse(
+            os.path.join(self.workflow_dir, self.docx_filename, "word", "_rels", "document.xml.rels"))
         w_ids = []
         for elem in rel_xml.childNodes[0].getElementsByTagName("Relationship"):
             elem: xml.dom.minidom.Element
@@ -173,10 +176,13 @@ class Util:
         Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable"
         Target="fontTable.xml" />
             """
-        info_list = [["http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments","comments.xml"],
-                     ["http://schemas.microsoft.com/office/2016/09/relationships/commentsIds","commentsIds.xml"],
-                     ["http://schemas.microsoft.com/office/2011/relationships/commentsExtended","commentsExtended.xml"],
-                     ["",""]]
+        info_list = [["http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", "comments.xml"],
+                     ["http://schemas.microsoft.com/office/2016/09/relationships/commentsIds", "commentsIds.xml"],
+                     ["http://schemas.microsoft.com/office/2011/relationships/commentsExtended",
+                      "commentsExtended.xml"],
+                     ["http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible",
+                      "commentsExtensible.xml"]]
+        info_list = info_list[:1]
         for each in info_list:
             commentsId = "rId" + str(max([int(each.replace("rId", "")) for each in w_ids]) + 1)
             w_ids.append(commentsId)
@@ -186,8 +192,24 @@ class Util:
         with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word", "_rels", "document.xml.rels"),
                   mode="w", encoding="utf-8") as f:
             rel_xml.writexml(f)
+        # ！！！！！！！！！！！！这里不要把原本的盖掉
         ContentTypesXml: xml.dom.minidom.Document = xml.dom.minidom.parse(
-            os.path.join(self.code_dir, "BaseXml", "[Content_Types].xml"))
+            os.path.join(self.workflow_dir, self.docx_filename, "[Content_Types].xml"))
+        ContentTypesList = [
+            ["/word/comments.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"],
+            ["/word/commentsExtended.xml",
+             "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"],
+            ["/word/commentsIds.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml"],
+            ["/word/commentsExtensible.xml",
+             "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml"]]
+        ContentTypesList = ContentTypesList[:1]
+        for each_type in ContentTypesList:
+            Override_elem: xml.dom.minidom.Element = ContentTypesXml.createElement("Override")
+            Override_elem.setAttribute("PartName", each_type[0])
+            Override_elem.setAttribute("ContentType", each_type[1])
+            ContentTypesXml.childNodes[0].appendChild(Override_elem)
+        # ContentTypesXml: xml.dom.minidom.Document = xml.dom.minidom.parse(
+        #     os.path.join(self.code_dir, "BaseXml", "[Content_Types].xml"))
         with open(os.path.join(self.workflow_dir, self.docx_filename, "[Content_Types].xml"), mode="w",
                   encoding="utf-8") as f:
             ContentTypesXml.writexml(f)
@@ -1164,7 +1186,8 @@ class Util:
             "font_ascii": "Times New Roman",
             "font_color": "000000"
         }
-        item_style_list = [StyleDictOfEnglishType, StyleDictOfEnglishTitle, StyleDictOfEnglishWriterInfo, StyleDictOfEnglishSchoolInfo]
+        item_style_list = [StyleDictOfEnglishType, StyleDictOfEnglishTitle, StyleDictOfEnglishWriterInfo,
+                           StyleDictOfEnglishSchoolInfo]
         for i in range(4):
             for each in item_para_list[i]:
                 self.checkStyle(each, item_style_list[i])
