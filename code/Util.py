@@ -671,6 +671,8 @@ class Util:
         mark_color = "FFD400"
         if para.tagName != "w:p":
             para = para.getElementsByTagName("w:p")[0]
+        # print("run_index_list:",run_index_list)
+        # print("para.getElementsByTagName('w:r'):",len(para.getElementsByTagName("w:r")))
         for each in run_index_list:
             run_elem: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[each]
             rPr: xml.dom.minidom.Element
@@ -1065,69 +1067,78 @@ class Util:
                 self.print_error("学校代码不存在或错误", para)
             return
 
-        def check_paper_type_style(para: xml.dom.minidom.Element):
-            self.print_log("----------checking type info----------")
-            StyleDict = {
-                "font_b": "1",
-                "font_sz": "45",
-                "font_eastAsia": "华文中宋",
-                "font_ascii": "Times New Roman",
-                "font_color": "000000"
-            }
-            self.checkStyle(para, StyleDict)
-            self.print_log("--------------------over--------------------")
-
-        def check_paper_title_style(para: xml.dom.minidom.Element):
-            self.print_log("----------checking title info----------")
-            StyleDict = {
-                "font_b": "1",
-                "font_sz": "一号",
-                "font_eastAsia": "宋体",
-                "font_ascii": "Times New Roman",
-                "font_color": "000000"
-            }
-            self.checkStyle(para, StyleDict)
-            self.print_log("--------------------over--------------------")
-            return
-
-        def check_paper_writer_style(para: xml.dom.minidom.Element):
-            self.print_log("----------checking paper writer info----------")
-            StyleDict = {
-                "font_b": "1",
-                "font_sz": "小三",
-                "font_eastAsia": "宋体",
-                "font_ascii": "Times New Roman",
-                "font_color": "000000"
-            }
-            self.checkStyle(para, StyleDict)
-            self.print_log("--------------------over--------------------")
-            return
-
-        checkList = [[check_student_number, "分类号"], [check_school_number, "学校代码"],
-                     [check_paper_type_style, "硕士学位论文"], [check_paper_title_style, ""],
-                     [check_paper_writer_style, "学位申请人"]]
         self.print_log("----------Detecting Paper Chinese Cover----------")
-        check_index = 0
+
+        item_para_list = [[]]
+        item_para_index = 0
         for index in range(para_index_begin, para_index_end):
-            if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "":
+            if self.docx_body.childNodes[index].tagName in ["w:bookmarkStart", "w:bookmarkEnd"]:
                 continue
-            if check_index < len(checkList):
-                check_item = checkList[check_index]
-                if check_item[1] in self.getFullText(self.docx_body.childNodes[index]).replace(" ", ""):
-                    check_item[0](self.docx_body.childNodes[index])
-                    check_index += 1
-                    continue
+            content = self.getFullText(self.docx_body.childNodes[index])
+            if content.strip() == "":
+                if item_para_list[-1]:
+                    item_para_index += 1
+                    item_para_list.append([])
                 else:
-                    if check_item[1] == "":
-                        check_item[0](self.docx_body.childNodes[index])
-                        check_index += 1
-                        continue
-        if check_index < len(checkList):
-            self.print_log("匹配出错，部分标签未匹配")
+                    continue
+            else:
+                if self.docx_body.childNodes[index].tagName == "w:p":
+                    item_para_list[item_para_index].append(self.docx_body.childNodes[index])
+                else:
+                    item_para_list[item_para_index].extend(self.docx_body.childNodes[index].getElementsByTagName("w:p"))
 
-            # print(self.docx_body.childNodes[index].tagName)
-            # print(self.getFullText(self.docx_body.childNodes[index]), end="\n\n")
+        if len(item_para_list) != 5:
+            raise Exception(
+                "请检查封面部分是否正确，封面一般包含分类号、学号、学校代码、密级、硕士学位论文、论文标题、学位申请人、学科专业、指导教师、答辩日期等内容")
 
+        if len(item_para_list[0]) == 2:
+            check_student_number(item_para_list[0][0])
+            check_school_number(item_para_list[0][1])
+        elif len(item_para_list[0]) < 2:
+            self.print_error("请检查[分类号,学号],[学校代码,密级] 是否 没有进行分段", item_para_list[0][0])
+            raise Exception("请检查[分类号,学号],[学校代码,密级] 是否 没有进行分段")
+        elif len(item_para_list[0]) > 2:
+            self.print_error("分类号和学校代码段落部分初该两段以外还包含其他不需要的内容", item_para_list[0][0])
+            raise Exception("分类号和学校代码段落部分初该两段以外还包含其他不需要的内容")
+
+        # 分类号、学校代码
+        Type_0_StyleDict = {
+            "font_b": "1",
+            "font_sz": "小四",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        # 硕士学位论文
+        Type_1_StyleDict = {
+            "font_b": "1",
+            "font_sz": "45",
+            "font_eastAsia": "华文中宋",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+            # "jc": "center"
+        }
+        # 论文标题
+        Title_StyleDict = {
+            "font_b": "1",
+            "font_sz": "一号",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000",
+            # "jc": "center"
+        }
+        # 学位申请人、学科专业、指导教师、答辩日期
+        Writer_StyleDict = {
+            "font_b": "1",
+            "font_sz": "小三",
+            "font_eastAsia": "宋体",
+            "font_ascii": "Times New Roman",
+            "font_color": "000000"
+        }
+        style_dict_list = [Type_0_StyleDict, Type_1_StyleDict, Title_StyleDict, Writer_StyleDict]
+        for i in range(len(style_dict_list)):
+            for each in item_para_list[i]:
+                self.checkStyle(each, style_dict_list[i])
         self.print_log("--------------------over--------------------")
 
     def DetectEnglishCover(self, para_index_begin, para_index_end):
@@ -1188,7 +1199,7 @@ class Util:
         }
         item_style_list = [StyleDictOfEnglishType, StyleDictOfEnglishTitle, StyleDictOfEnglishWriterInfo,
                            StyleDictOfEnglishSchoolInfo]
-        for i in range(4):
+        for i in range(len(item_style_list)):
             for each in item_para_list[i]:
                 self.checkStyle(each, item_style_list[i])
         return
