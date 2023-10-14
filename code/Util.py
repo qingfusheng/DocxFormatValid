@@ -118,8 +118,15 @@ class Util:
             os.mkdir(os.path.join(self.code_dir, "OutputDocxFilter"))
 
         self.docx_filename = file_name
-        self.new_docx_file = "new_" + self.docx_filename
-        self.error_log_text = ""
+        # self.new_docx_file = "new_" + self.docx_filename
+
+        self.output_docx_file_path = os.path.join(self.code_dir, "OutputDocxFilter", self.docx_filename)
+        self.error_text = ""
+
+        self.output_report_path = os.path.join(self.code_dir, "OutputDocxFilter",
+                                               self.docx_filename.replace(".docx", "") + ".txt")
+        if os.path.exists(self.output_report_path):
+            os.remove(self.output_report_path)
 
         self.unzip()
         self.doc: xml.dom.minidom.Document = minidom.parse(
@@ -214,7 +221,9 @@ class Util:
                   encoding="utf-8") as f:
             ContentTypesXml.writexml(f)
 
-    def saveAs(self, output_path):
+    def saveAs(self):
+        with open(file=self.output_report_path, mode="w", encoding="utf-8") as f:
+            f.write(self.error_text)
         with open(file=os.path.join(self.workflow_dir, self.docx_filename, "word", "document.xml"), mode="w",
                   encoding="utf-8") as f:
             self.doc.writexml(f)
@@ -222,7 +231,7 @@ class Util:
                   encoding="utf-8") as f:
             self.comments.writexml(f)
         self.set_docx_rel()
-        newf = zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED)  # 创建一个新的docx文件，作为修改后的docx
+        newf = zipfile.ZipFile(self.output_docx_file_path, 'w', zipfile.ZIP_DEFLATED)  # 创建一个新的docx文件，作为修改后的docx
         for path, dirnames, filenames in os.walk(
                 os.path.join(self.workflow_dir, self.docx_filename)):  # 将workfolder文件夹所有的文件压缩至new.docx
             # 去掉目标跟路径，只对目标文件夹下边的文件及文件夹进行压缩
@@ -357,6 +366,7 @@ class Util:
         # 判断是否为标题title
         # 问题是，type的含义是什么，type的取值是[0,1,2,3]，前面提到附录等一级标题的type为1，
         text = self.getFullText(p)
+        # print(text)
         type = 0
         # "25 ", "25.|25.|25，|25、|25或", "11.11", "1.1.11"
         reg = ["^[1-9][0-9]?\s*[a-zA-Z\u4E00-\u9FA5]{2,}", "^[1-9][0-9]*\.[1-9][0-9]*\s*[a-zA-Z\u4E00-\u9FA5]{2,}",
@@ -366,13 +376,8 @@ class Util:
         match = False
         if len(text.strip()) == 0:
             return False, 0
+        # 长度超过40的段落默认不是标题
         if len(text) < 40:
-            # 长度超过40的段落默认不是标题
-            for i in ['附录', '致谢', '参考文献']:
-                if i in text.replace(' ', '') and len(text) <= 20:
-                    type = 1
-                    match = True
-                    break
             # i -> [3, 2, 1, 0]
             # 这里使用reverse的目的是,先匹配1.1.1， 再匹配1.1， 防止误将1.1.1匹配为一级或二级标签
             for i in reversed(range(len(reg))):
@@ -381,59 +386,55 @@ class Util:
                 # 1.|1.|1，|1、|1 -> type=1
                 # '1 ' -> type=0
                 if len(reg[i].findall(text)) == 1:
-                    # print("match 1 , ", i)
-                    # print(reg[i])
-                    # print(text)
-                    # print("-----------------")
-                    #
                     type = i + 1
                     match = True
+                    # print("通过正则表达式匹配")
                     break
-            # print(self.getFullText(p), match, type)
+            if self.isTabTitle(p)[0] or self.isPicTitle(p)[0]:
+                # print("I'm here")
+                # print("已知为图/表标题，排除于title外")
+                match = False
+                return False, 0
+
             if not p.getElementsByTagName("w:pPr"):
+                # print("没有包含w:pPr属性，排除")
                 match = False
             else:
-                points = 0
                 pPr = p.getElementsByTagName("w:pPr")[0]
-                rFont = pPr.getElementsByTagName("w:rFont")[0] if pPr.getElementsByTagName("w:rFont") else None
-                bold = bool(pPr.getElementsByTagName("w:b") or pPr.getElementsByTagName("w:bCs"))
-                sz = pPr.getElementsByTagName("w:sz")[0].getAttribute("w:val") if pPr.getElementsByTagName(
-                    "w:sz") else "24"
-                szCs = pPr.getElementsByTagName("w:szCs")[0].getAttribute("w:val") if pPr.getElementsByTagName(
-                    "w:szCs") else "24"
-                if rFont == "黑体":
-                    points += 1
-                if bold:
-                    points += 1
-                if int(sz) > 24 or int(szCs) > 24:
-                    points += 1
-                # print("points:", points)
-                if points > 1:
-                    match = True
-
-                # if re.match(reg[i], text):
-                #     print("match 1 , ", i)
-                #     print(reg[i])
-                #     print(text)
-                #     print("-----------------")
-                #     type = i
-                #     match = True
-                #     break
-            if self.isTabTitle(p) or self.isPicTitle(p):
-                match = False
-
-            if p.getElementsByTagName('w:pPr'):
-                pPr = p.getElementsByTagName('w:pPr')[0]
                 if pPr.getElementsByTagName("w:pStyle"):
                     pStyle = pPr.getElementsByTagName("w:pStyle")[0]
                     pStyleId = pStyle.getAttributeNS("http://schemas.openxmlformats.org/wordprocessingml/2006/main",
                                                      "val")
-                    # print("pStyle:", pStyleId)
                     points, ilvl = self.getPointsOfStyle(pStyleId)
                     if points >= 2 and int(ilvl) >= 0:
-                        # print("matched Successfully")
                         match = True
                         type = int(ilvl) + 1
+                    elif points < 1:
+                        # print("有pStyle属性，且样式匹配失败")
+                        match = False
+                else:
+                    points = 0
+                    pPr = p.getElementsByTagName("w:pPr")[0]
+                    rFont = pPr.getElementsByTagName("w:rFont")[0].getAttribute("w:eastAsia") \
+                        if pPr.getElementsByTagName("w:rFont") else None
+                    bold = bool(pPr.getElementsByTagName("w:b") or pPr.getElementsByTagName("w:bCs"))
+                    sz = pPr.getElementsByTagName("w:sz")[0].getAttribute("w:val") if pPr.getElementsByTagName(
+                        "w:sz") else "24"
+                    szCs = pPr.getElementsByTagName("w:szCs")[0].getAttribute("w:val") if pPr.getElementsByTagName(
+                        "w:szCs") else "24"
+                    if rFont == "黑体":
+                        points += 1
+                    if bold:
+                        points += 1
+                    if int(sz) > 24 or int(szCs) > 24:
+                        points += 1
+                    # print("points:", points)
+                    if points > 1:
+                        match = True
+                        # print("通过样式匹配")
+                    else:
+                        match = False
+                        # print("无pStyle，且样式匹配失败")
         return match, type
 
     @staticmethod
@@ -657,24 +658,41 @@ class Util:
         # print(comments)
         return
 
-    @staticmethod
-    def print_log(content: str):
-        # print(content)
+    def print_log(self, content: str):
+        # with open(self.output_report_path, "a+") as f:
+        #     f.write(content+"\n")
+        self.error_text += content + "\n"
         return
 
-    def print_error(self, content: str, para: xml.dom.minidom.Element):
+    def print_para_error(self, content: str, para: xml.dom.minidom.Element):
+        error_location = self.getFullText(para)[:10]
+        self.error_text += error_location[:10] + "---" + content + "\n"
+        # with open(self.output_report_path, "a+") as f:
+        #     f.write(error_location + "-----------" + content + "\n")
+        return
+
+    def print_error(self, content: str, error_location: str):
         # print(self.getFullText(para))
         # print(content)
+        self.error_text += error_location[:10] + "---" + content + "\n"
+        # with open(self.output_report_path, "a+") as f:
+        #     f.write(error_location+"---"+content+"\n")
         return
 
-    def mark_error_of_run_list(self, commentContent: str, para: xml.dom.minidom.Element, run_index_list: List[int]):
-        mark_color = "FFD400"
+    def mark_error_of_run_list(self, commentContent: str, para: xml.dom.minidom.Element, run_elem_list: List[xml.dom.minidom.Element]):
+        if run_elem_list:
+            print(commentContent)
+            for each in run_elem_list:
+                print(self.getFullText(each), end=" ")
+            print(end="\n")
+        # mark_color = "FFD400"
+        mark_color = "FFFF00"
         if para.tagName != "w:p":
             para = para.getElementsByTagName("w:p")[0]
-        # print("run_index_list:",run_index_list)
-        # print("para.getElementsByTagName('w:r'):",len(para.getElementsByTagName("w:r")))
-        for each in run_index_list:
-            run_elem: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[each]
+
+        error_location = ""
+        for run_elem in run_elem_list:
+            error_location += self.getFullText(run_elem)
             rPr: xml.dom.minidom.Element
             if run_elem.getElementsByTagName("w:rPr"):
                 rPr: xml.dom.minidom.Element = run_elem.getElementsByTagName("w:rPr")[0]
@@ -690,20 +708,17 @@ class Util:
                 font_color.setAttribute("w:val", mark_color)
                 rPr.appendChild(font_color)
                 run_elem.appendChild(rPr)
-        first_run_item: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[run_index_list[0]]
+        self.print_error(commentContent, error_location)
+        first_run_item: xml.dom.minidom.Element = run_elem_list[0]
+        last_run_item: xml.dom.minidom.Element = run_elem_list[-1]
 
         while first_run_item.parentNode.nodeName != "w:p":
             first_run_item = first_run_item.parentNode
 
-        # print("ParentPara:", first_run_item.parentNode.toxml())
-        # print("ReservedPara:", para.toxml())
-
-        last_run_item: xml.dom.minidom.Element = para.getElementsByTagName("w:r")[run_index_list[-1]]
         while last_run_item.parentNode.nodeName != "w:p":
             last_run_item = last_run_item.parentNode
 
         commentId = self.create_comment(commentContent)
-
         commentRangeStart: xml.dom.minidom.Element = self.doc.createElement("w:commentRangeStart")
         commentRangeStart.setAttribute("w:id", commentId)
         commentRangeEnd: xml.dom.minidom.Element = self.doc.createElement("w:commentRangeEnd")
@@ -935,7 +950,7 @@ class Util:
         self.DetectReference(IndexList[text_end_index + 1], IndexList[text_end_index + 2])
         self.DetectAppendixes(IndexList, text_end_index + 2, len(IndexList))
 
-        self.saveAs(os.path.join(self.code_dir, "OutputDocxFilter", self.docx_filename))
+        self.saveAs()
 
     def DetectCover(self, index_list: list, index_start: int, index_end: int):
         self.print_log("Detecting Paper CCover")
@@ -944,11 +959,7 @@ class Util:
         pass
 
     def checkStyle(self, para, StyleDict):
-        # begin_time = time.time()
         paragraph_style = Style()
-        # print("-------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!-------------------")
-        # print(self.getFullText(para))
-        # print(StyleDict)
         if para.tagName == "w:p":
             paragraph_style = self.get_style_of_para(para)
         if para.tagName == "w:r":
@@ -964,15 +975,19 @@ class Util:
         # font_color_wrong: bool = False
         # jc_wrong: bool = False
         # chinese_style_name_list = ["粗体：", "字体大小：", "中文字体：", "英文字体：", "字体颜色：", "是否对齐："]
-        pre_style_list = [False, False, False, False, False, False]
-        cur_style_list = [False, False, False, False, False, False]
-        para_index_list = [[], [], [], [], [], []]
+        pre_style_list = [False for _ in range(6)]
+        cur_style_list = [False for _ in range(6)]
+        para_run_elem_list = [[] for _ in range(6)]
         for elem_index in range(len(para.getElementsByTagName("w:r"))):
             elem = para.getElementsByTagName("w:r")[elem_index]
             if elem.nodeName == "w:r":
                 if self.getFullText(elem).strip() == "":
                     continue
+
                 run_style = self.get_style_of_run(elem)
+                # if self.getFullText(elem) == "域取得了十分不错的":
+                #     print("-----------------")
+                #     print(run_style)
                 # print(self.getFullText(elem))
                 # print("para_style:", paragraph_style)
                 # print("run_style:", run_style)
@@ -986,17 +1001,9 @@ class Util:
                     if getattr(run_style, style_name) != "":
                         style_attr = getattr(run_style, style_name)
                     if style_attr == "":
-                        # print(style_name, style_attr, end=" ")
                         style_attr = getattr(default_style, style_name)
-                        # print(style_attr)
-                    # print(style_name, style_attr)
                     setattr(style_class, style_name, style_attr)
 
-                # try:
-                #     pre_b, pre_sz, pre_eastAsia, pre_ascii, pre_color, pre_jc = b_wrong, font_sz_wrong, font_eastAsia_wrong, font_ascii_wrong, font_color_wrong, jc_wrong
-                # except NameError as error:
-                #     pre_b, pre_sz, pre_eastAsia, pre_ascii, pre_color, pre_jc = False, False, False, False, False, False
-                # b_wrong, font_sz_wrong, font_eastAsia_wrong, font_ascii_wrong, font_color_wrong, jc_wrong = False, False, False, False, False, False
                 for i in range(6):
                     pre_style_list[i] = cur_style_list[i]
 
@@ -1005,49 +1012,49 @@ class Util:
 
                 if style_class.font_b != StyleDict["font_b"]:
                     cur_style_list[0] = True
-                    self.print_error("请检查粗体是否使用正确", elem)
+                    # self.print_error("请检查粗体是否使用正确", self.getFullText(elem))
                 # if style_class.font_bCs != "1":
                 #     self.print_error("请使用粗体", elem)
                 if style_class.font_sz != get_pound_of_font_sz(StyleDict["font_sz"]):
                     cur_style_list[1] = True
-                    self.print_error("字体大小错误，应当为" + StyleDict["font_sz"] + "，而实际上是" + style_class.font_sz,
-                                     elem)
+                    # self.print_error("字体大小错误，应当为" + StyleDict["font_sz"] + "，而实际上是" + style_class.font_sz,
+                    #                  self.getFullText(elem))
                 if style_class.font_eastAsia != StyleDict["font_eastAsia"]:
                     cur_style_list[2] = True
-                    self.print_error("中文字体使用错误，应为" + StyleDict[
-                        "font_eastAsia"] + "，而实际上是" + style_class.font_eastAsia, elem)
+
                 if StyleDict["font_ascii"] != "":
                     if style_class.font_ascii not in [StyleDict["font_ascii"], ""]:
-                        cur_style_list[3] = True
-                        self.print_error(
-                            "英文字体使用错误，应为" + StyleDict["font_ascii"] + "，而实际上是" + style_class.font_ascii,
-                            elem)
+                        if re.compile("[a-zA-Z]").match(self.getFullText(elem)):
+                            cur_style_list[3] = True
+                        # self.print_error(
+                        #     "英文字体使用错误，应为" + StyleDict["font_ascii"] + "，而实际上是" + style_class.font_ascii,
+                        #     self.getFullText(elem))
                 if "font_color" in StyleDict:
                     if style_class.font_color not in ["", "000000", "auto"]:
                         cur_style_list[4] = True
-                        self.print_error("颜色使用错误，应为" + "黑色" + "，而实际上是" + style_class.font_color, elem)
+                        # self.print_error("颜色使用错误，应为" + "黑色" + "，而实际上是" + style_class.font_color, self.getFullText(elem))
                 if "jc" in StyleDict:
                     if style_class.jc != StyleDict["jc"]:
                         cur_style_list[5] = True
-                        self.print_error("对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc,
-                                         elem)
+                        # self.print_error("对齐方式使用错误，应为" + StyleDict["jc"] + "，而实际上是" + style_class.jc,
+                        #                  self.getFullText(elem))
                 for i in range(6):
                     if cur_style_list[i]:
                         if pre_style_list[i]:
-                            para_index_list[i][-1].append(elem_index)
+                            para_run_elem_list[i][-1].append(para.getElementsByTagName("w:r")[elem_index])
                         else:
-                            para_index_list[i].append([elem_index])
+                            para_run_elem_list[i].append([para.getElementsByTagName("w:r")[elem_index]])
+
+        # for each in para_run_elem_list[2]:
+        #     for each2 in each:
+        #         print("1--------" + self.getFullText(para.getElementsByTagName("w:r")[each2]), end=" ")
+        #     print(end="\n")
         # print("--------------start---------------")
-        error_text_list = ["粗体使用错误", "字体大小错误", "中文字体错误", "英文字体错误", "字体颜色错误",
-                           "段落对齐错误"]
-        # styleIdList = []
-        # for index in range(len(error_text_list)):
-        #     comment = self.create_comment(error_text_list[index])
-        #     styleIdList.append(comment)
+        error_text_list = ["粗体使用错误", "字体大小错误", "中文字体错误", "英文字体错误", "字体颜色错误", "段落对齐错误"]
+
         for i in range(6):
-            for each_index in para_index_list[i]:
-                self.mark_error_of_run_list(error_text_list[i], para, each_index)
-            # print(chinese_style_name_list[i], para_index_list[i])
+            for run_elem_list in para_run_elem_list[i]:
+                self.mark_error_of_run_list(error_text_list[i], para, run_elem_list)
         # print("--------------end---------------")
         # if has_wrong:
         #     print("$$$$$$$$$$$$$$$$$$$$$$$$$$$错误位置$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$：", self.getFullText(elem))
@@ -1056,15 +1063,17 @@ class Util:
         # print("程序时间：", time_delay)
 
     def DetectChineseCover(self, para_index_begin: int, para_index_end: int):
+        # 使用双指针判断的方法，还是宏观对每个部分进行判断，这是一个问题，
+        # 宏观时，需要针对于超出原定部分的内容进行特定处理，此时还是需要判断content
         def check_student_number(para: xml.dom.minidom.Element):
             student_number_reg = re.compile(r'M20\d{7}')
             if not student_number_reg.findall(self.getFullText(para).replace(" ", "")):
-                self.print_error("学号不存在或位数错误", para)
+                self.print_error("学号不存在或位数错误", self.getFullText(para))
             return
 
         def check_school_number(para: xml.dom.minidom.Element):
             if "10487" not in self.getFullText(para).replace(" ", ""):
-                self.print_error("学校代码不存在或错误", para)
+                self.print_error("学校代码不存在或错误", self.getFullText(para))
             return
 
         self.print_log("----------Detecting Paper Chinese Cover----------")
@@ -1088,18 +1097,23 @@ class Util:
                     item_para_list[item_para_index].extend(self.docx_body.childNodes[index].getElementsByTagName("w:p"))
 
         if len(item_para_list) != 5:
-            raise Exception(
-                "请检查封面部分是否正确，封面一般包含分类号、学号、学校代码、密级、硕士学位论文、论文标题、学位申请人、学科专业、指导教师、答辩日期等内容")
+            self.print_error(
+                "严重错误！请检查封面部分是否正确，封面一般包含分类号、学号、学校代码、密级、硕士学位论文、论文标题、学位申请人、学科专业、指导教师、答辩日期等内容",
+                self.getFullText(self.docx_body.childNodes[0]))
+            # raise Exception(
+            #     "请检查封面部分是否正确，封面一般包含分类号、学号、学校代码、密级、硕士学位论文、论文标题、学位申请人、学科专业、指导教师、答辩日期等内容")
 
         if len(item_para_list[0]) == 2:
             check_student_number(item_para_list[0][0])
             check_school_number(item_para_list[0][1])
         elif len(item_para_list[0]) < 2:
-            self.print_error("请检查[分类号,学号],[学校代码,密级] 是否 没有进行分段", item_para_list[0][0])
-            raise Exception("请检查[分类号,学号],[学校代码,密级] 是否 没有进行分段")
+            self.print_error("请检查[分类号,学号],[学校代码,密级] 是否 没有进行分段",
+                             self.getFullText(item_para_list[0][0]))
+            # raise Exception("请检查[分类号,学号],[学校代码,密级] 是否 没有进行分段")
         elif len(item_para_list[0]) > 2:
-            self.print_error("分类号和学校代码段落部分初该两段以外还包含其他不需要的内容", item_para_list[0][0])
-            raise Exception("分类号和学校代码段落部分初该两段以外还包含其他不需要的内容")
+            self.print_error("分类号和学校代码段落部分初该两段以外还包含其他不需要的内容",
+                             self.getFullText(item_para_list[0][0]))
+            # raise Exception("分类号和学校代码段落部分初该两段以外还包含其他不需要的内容")
 
         # 分类号、学校代码
         Type_0_StyleDict = {
@@ -1167,7 +1181,7 @@ class Util:
             raise Exception("英文封面包括4个部分，请检查是否正确")
 
         if len(item_para_list[0]) > 1:
-            self.print_error("英文封面标题不应该分不同段落", item_para_list[0][0])
+            self.print_error("英文封面标题应该在同一段落", self.getFullText(item_para_list[0][0]))
 
         StyleDictOfEnglishType = {
             "font_b": "1",
@@ -1301,7 +1315,7 @@ class Util:
         if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "摘要":
             self.checkStyle(self.docx_body.childNodes[index], abstract_style_dict)
             if not self.getFullText(self.docx_body.childNodes[index]).strip() == "摘  要":
-                self.print_error("摘要二字中间应该要留两个空格", self.docx_body.childNodes[index])
+                self.print_error("摘要二字中间应该要留两个空格", self.getFullText(self.docx_body.childNodes[index]))
         text_style_dict = {
             "font_b": "0",
             "font_sz": "小四",
@@ -1319,7 +1333,7 @@ class Util:
         keyword_list = re.split(re.compile(r'[;；]'),
                                 self.getFullText(self.docx_body.childNodes[index]).strip().replace("关键词：", ""))
         if not 3 <= len(keyword_list) <= 8:
-            self.print_error("关键字数量一般为3~8个", self.docx_body.childNodes[index])
+            self.print_error("关键字数量一般为3~8个", self.getFullText(self.docx_body.childNodes[index]))
         keyword_title_style_dict = {
             "font_b": "1",
             "font_sz": "小四",
@@ -1354,7 +1368,7 @@ class Util:
         while self.getFullText(self.docx_body.childNodes[index]).replace(" ", "") == "":
             index += 1
         if self.getFullText(self.docx_body.childNodes[index]).replace(" ", "").strip() != "Abstract":
-            self.print_error("此处应为Abstract", self.docx_body.childNodes[index])
+            self.print_error("请检查英文摘要部分结构是否正确", "")
         else:
             index += 1
         text_style_dict = {
@@ -1373,7 +1387,8 @@ class Util:
         keyword_list = re.split(re.compile(r',\s*'),
                                 self.getFullText(self.docx_body.childNodes[index]).strip().replace("Key words:", ""))
         if not 3 <= len(keyword_list) <= 8:
-            self.print_error("关键字数量一般为3~8个", self.docx_body.childNodes[index])
+            self.print_error("关键字数量一般为3~8个", "")
+            # self.print_error("关键字数量一般为3~8个", self.docx_body.childNodes[index])
         keyword_title_style_dict = {
             "font_b": "1",
             "font_sz": "小四",
@@ -1487,23 +1502,25 @@ class Util:
             if self.docx_body.childNodes[index].tagName == "w:p":
                 if self.getFullText(self.docx_body.childNodes[index]).strip() == "":
                     continue
+                # print(self.getFullText(self.docx_body.childNodes[index]))
                 is_title, title_type = self.isTitle(self.docx_body.childNodes[index])
                 is_tab_title, tab_title_type = self.isTabTitle(self.docx_body.childNodes[index])
                 is_pic_title, pic_title_type = self.isPicTitle(self.docx_body.childNodes[index])
                 if is_title:
+                    # print(str(title_type)+"-----"+self.getFullText(self.docx_body.childNodes[index]))
                     self.checkStyle(self.docx_body.childNodes[index], title_style_dict[str(title_type)])
                 elif is_tab_title or is_pic_title:
                     self.checkStyle(self.docx_body.childNodes[index], tab_and_figure_title_style_dict)
                 else:
                     self.checkStyle(self.docx_body.childNodes[index], content_style_dict)
-
         self.print_log("--------------------over--------------------")
 
     def DetectAcknowledge(self, para_index_begin, para_index_end):
         self.print_log("----------Detecting Paper Acknowledge----------")
         index = para_index_begin
         if self.getFullText(self.docx_body.childNodes[index]).strip() != "致  谢":
-            self.print_error("致谢二字中间应该留两个空格", self.docx_body.childNodes[index])
+            # self.print_error("致谢二字中间应该留两个空格", self.getFullText(self.docx_body.childNodes[index]))
+            self.print_error("致谢二字中间应该留两个空格", "")
         acknowledge_title_style_dict = {
             "font_b": "1",
             "font_sz": "三号",
@@ -1576,7 +1593,8 @@ class Util:
             "font_color": "000000",
         }
         if not re.compile(r'^附录(\d+\s*)?').match(self.getFullText(self.docx_body.childNodes[index])):
-            self.print_error("附录部分匹配失败", self.docx_body.childNodes[index])
+            # self.print_error("附录部分匹配失败", self.getFullText(self.docx_body.childNodes[index]))
+            self.print_error("附录部分匹配失败", "")
         else:
             self.checkStyle(self.docx_body.childNodes[index], appendix_title_style_dict)
         index += 1
@@ -1587,6 +1605,7 @@ class Util:
         self.print_log("--------------------over--------------------")
 
     def test_method(self):
+        begin_time = time.time()
         self.DetectPaper()
         # temp_string = ["bei", "jing", "huan", "ying", "ni"]
         # for each in temp_string:
@@ -1603,4 +1622,6 @@ class Util:
         #     print(each.tagName)
         # for para in self.doc.getElementsByTagName("w:p"):
         #     self.getFullTextAndCommentOfPara(para)
+        end_time = time.time()
+        print("共耗时：", end_time - begin_time)
         return
