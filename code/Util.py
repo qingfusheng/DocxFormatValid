@@ -37,17 +37,17 @@ class Style:
 
     def __str__(self):
         return json.dumps({
-            "英文字体：": self.font_ascii,
-            "中文字体：": self.font_eastAsia,
-            "中文字号：": self.font_sz,
-            "复杂字号：": self.font_szCs,
-            "是否粗体：": self.font_b,
-            "是否粗体2：": self.font_bCs,
-            "是否斜体：": self.font_i,
-            "是否下划线：": self.font_u,
-            "颜色：": self.font_color,
-            "背景颜色：": self.font_shd,
-            "是否高亮：": self.highlight,
+            "英文字体": self.font_ascii,
+            "中文字体": self.font_eastAsia,
+            "中文字号": self.font_sz,
+            "复杂字号": self.font_szCs,
+            "是否粗体": self.font_b,
+            "是否粗体2": self.font_bCs,
+            "是否斜体": self.font_i,
+            "是否下划线": self.font_u,
+            "颜色": self.font_color,
+            "背景颜色": self.font_shd,
+            "是否高亮": self.highlight,
             "对齐方式": self.jc,
             "缩进设置：": self.ind,
             "行距设置": self.spacing
@@ -680,11 +680,11 @@ class Util:
         return
 
     def mark_error_of_run_list(self, commentContent: str, para: xml.dom.minidom.Element, run_elem_list: List[xml.dom.minidom.Element]):
-        if run_elem_list:
-            print(commentContent)
-            for each in run_elem_list:
-                print(self.getFullText(each), end=" ")
-            print(end="\n")
+        # if run_elem_list:
+        #     print(commentContent)
+        #     for each in run_elem_list:
+        #         print(self.getFullText(each), end=" ")
+        #     print(end="\n")
         # mark_color = "FFD400"
         mark_color = "FFFF00"
         if para.tagName != "w:p":
@@ -692,6 +692,7 @@ class Util:
 
         error_location = ""
         for run_elem in run_elem_list:
+            flag = False
             error_location += self.getFullText(run_elem)
             rPr: xml.dom.minidom.Element
             if run_elem.getElementsByTagName("w:rPr"):
@@ -707,7 +708,8 @@ class Util:
                 font_color = self.doc.createElement("w:color")
                 font_color.setAttribute("w:val", mark_color)
                 rPr.appendChild(font_color)
-                run_elem.appendChild(rPr)
+                # 注意，这里必须插入到w:run元素的首个节点，放在文本节点之后会让rPr属性失效
+                run_elem.insertBefore(rPr, run_elem.childNodes[0])
         self.print_error(commentContent, error_location)
         first_run_item: xml.dom.minidom.Element = run_elem_list[0]
         last_run_item: xml.dom.minidom.Element = run_elem_list[-1]
@@ -962,6 +964,7 @@ class Util:
         paragraph_style = Style()
         if para.tagName == "w:p":
             paragraph_style = self.get_style_of_para(para)
+        # 若为w:r标签，则获取w:r标签的父p标签的para属性
         if para.tagName == "w:r":
             while not para.parentNode.tagName == "w:p":
                 para = para.parentNode
@@ -985,12 +988,13 @@ class Util:
                     continue
 
                 run_style = self.get_style_of_run(elem)
-                # if self.getFullText(elem) == "域取得了十分不错的":
+                flag = False
+                # if "国内外研究现状" in self.getFullText(elem):
+                #     flag = True
+                #     print(self.getFullText(elem))
                 #     print("-----------------")
+                #     print("para_style:", paragraph_style)
                 #     print(run_style)
-                # print(self.getFullText(elem))
-                # print("para_style:", paragraph_style)
-                # print("run_style:", run_style)
                 style_class = Style()
                 style_name_list = ["font_ascii", "font_eastAsia", "font_sz", "font_szCs", "font_b", "font_bCs",
                                    "font_i", "font_u", "font_color", "font_shd", "highlight", "jc", "ind", "spacing"]
@@ -1003,7 +1007,8 @@ class Util:
                     if style_attr == "":
                         style_attr = getattr(default_style, style_name)
                     setattr(style_class, style_name, style_attr)
-
+                if flag:
+                    print(style_class)
                 for i in range(6):
                     pre_style_list[i] = cur_style_list[i]
 
@@ -1020,7 +1025,9 @@ class Util:
                     # self.print_error("字体大小错误，应当为" + StyleDict["font_sz"] + "，而实际上是" + style_class.font_sz,
                     #                  self.getFullText(elem))
                 if style_class.font_eastAsia != StyleDict["font_eastAsia"]:
-                    cur_style_list[2] = True
+                    if re.compile(r'[\u4e00-\u9fa5]').findall(self.getFullText(elem)):
+                        cur_style_list[2] = True
+                        # print("中文字体错误：", self.getFullText(elem))
 
                 if StyleDict["font_ascii"] != "":
                     if style_class.font_ascii not in [StyleDict["font_ascii"], ""]:
