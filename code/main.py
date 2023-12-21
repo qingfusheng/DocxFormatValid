@@ -7,4 +7,4 @@ if __name__ == "__main__":
     # tools = Util("理工科-硕士-华中科技大学学位论文参考模板 - 副本.docx")
     # tools = Util("理工科-硕士-华中科技大学学位论文参考模板.docx")
     # tools = Util("硕士论文方晓亮 v2.docx")
-    tools.test_method()
+    tools.DetectPaper()
